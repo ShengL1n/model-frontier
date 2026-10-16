@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { analyze } from "../src/analysis.mjs";
 import {
+  VENDOR_CHIPS,
   coverageSummary,
   filterModels,
   nativeCsvExport,
   nativeRanking,
   rankedModels,
   sanitizeSelection,
+  vendorChipCounts,
 } from "../src/portal.mjs";
 const model = (id, representatives, extra = {}) => ({
   id,
@@ -312,4 +314,33 @@ test("budget never attributes another source cost through a top-level fallback",
     }).length,
     0,
   );
+});
+test("vendor chips are a fixed unique quick-filter set over disclosed creators", () => {
+  const values = VENDOR_CHIPS.map((c) => c.value);
+  assert.equal(new Set(values).size, values.length);
+  for (const chip of VENDOR_CHIPS) {
+    assert.ok(chip.value, "chip 缺少 creator 值");
+    assert.ok(chip.label, "chip 缺少展示名");
+  }
+  // 固定编辑口径：全局基准与中国前沿各半，顺序不随数据筛选变化
+  assert.ok(VENDOR_CHIPS.length >= 8);
+});
+test("vendor chip counts use the full pool, skip creator-less rows, and keep chip order", () => {
+  const rows = [
+    { id: "a", creator: "OpenAI" },
+    { id: "b", creator: "OpenAI" },
+    { id: "c", creator: "Kimi" },
+    { id: "d", creator: "" },
+    { id: "e" },
+  ];
+  const chips = vendorChipCounts(rows);
+  assert.deepEqual(
+    chips.map((c) => c.value),
+    VENDOR_CHIPS.map((c) => c.value),
+  );
+  const byValue = Object.fromEntries(chips.map((c) => [c.value, c.count]));
+  assert.equal(byValue.OpenAI, 2);
+  assert.equal(byValue.Kimi, 1);
+  assert.equal(byValue.Anthropic, 0);
+  assert.equal(byValue["Z AI"], 0);
 });

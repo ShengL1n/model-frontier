@@ -18,6 +18,7 @@ const DEFAULTS = {
   excludeStale: false,
   costSource: "composite",
   focus: "openFirst",
+  onlyFront: false,
   query: "",
   view: "fusion",
   rankingQuery: "",
@@ -37,6 +38,7 @@ const BOOL_KEYS = {
   scoredOnly: "sf",
   nativeEstimated: "ne",
   nativeHistorical: "nh",
+  onlyFront: "of",
 };
 const ENUM_KEYS = {
   preset: ["p", PRESET_KEYS],

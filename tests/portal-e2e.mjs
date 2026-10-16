@@ -149,6 +149,36 @@ try {
     path: "test-artifacts/rankings.png",
     fullPage: true,
   });
+  // 厂商快捷筛选：chip 与厂商下拉同源，激活态写入分享链接，再次点击取消
+  await page.locator(".creator-chip", { hasText: "DeepSeek" }).click();
+  await page.waitForFunction(() => location.hash.includes("cr="));
+  assert.ok(
+    (await page.locator(".ranking-main-table tr[data-row-key]").count()) > 0,
+  );
+  await page.waitForFunction(() =>
+    [
+      ...document.querySelectorAll(".ranking-main-table tr[data-row-key]"),
+    ].every((r) => r.textContent.includes("DeepSeek")),
+  );
+  await page.locator('.creator-chip[aria-pressed="true"]').click();
+  await page.waitForFunction(() => !location.hash.includes("cr="));
+  // 探索页模型表 chip 同源：激活态同样入链、可复现，取消后恢复全量
+  await tab("前沿探索");
+  await page
+    .locator(".models-panel .creator-chip", { hasText: "Kimi" })
+    .click();
+  await page.waitForFunction(() => location.hash.includes("cr=Kimi"));
+  assert.ok((await page.locator(".models-panel tr[data-row-key]").count()) > 0);
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll(".models-panel tr[data-row-key]")].every(
+      (r) => r.textContent.includes("Kimi"),
+    ),
+  );
+  await page
+    .locator('.models-panel .creator-chip[aria-pressed="true"]')
+    .click();
+  await page.waitForFunction(() => !location.hash.includes("cr="));
+  await tab("融合排行榜");
   // 能力维度、口径差异、预算筛选与分享链接
   await page
     .getByRole("checkbox", { name: "LiveBench 能力维度", exact: true })

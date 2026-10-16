@@ -60,8 +60,8 @@ import {
   scopeComparison,
   PRESETS,
 } from "./analysis.mjs";
-import { Overview, Rankings, Comparison } from "./Portal.jsx";
-import { applyBudget, sanitizeSelection } from "./portal.mjs";
+import { Overview, Rankings, Comparison, CreatorChips } from "./Portal.jsx";
+import { applyBudget, sanitizeSelection, vendorChipCounts } from "./portal.mjs";
 import { applyEvidencePolicy, sourceHealth } from "./evidence.mjs";
 import {
   ConfigurationDetails,
@@ -164,7 +164,7 @@ function App() {
       ),
     ),
     [query, setQuery] = useState(shared.query ?? ""),
-    [creator, setCreator] = useState(),
+    [creator, setCreator] = useState(shared.creator || undefined),
     [estimated, setEstimated] = useState(
       shared.includeEstimated ?? prefs.includeEstimated === true,
     ),
@@ -192,7 +192,7 @@ function App() {
     })),
     [historyOpen, setHistoryOpen] = useState(false),
     [historyModel, setHistoryModel] = useState(null),
-    [onlyFront, setOnlyFront] = useState(false),
+    [onlyFront, setOnlyFront] = useState(shared.onlyFront === true),
     [selected, setSelected] = useState(null),
     [methodOpen, setMethodOpen] = useState(false),
     [tab, setTab] = useState(pageFromHash),
@@ -238,6 +238,8 @@ function App() {
       setCostSource(state.costSource ?? "composite");
       setFocus(state.focus ?? "openFirst");
       setQuery(state.query ?? "");
+      setCreator(state.creator || undefined);
+      setOnlyFront(state.onlyFront === true);
       setBudgetSource(state.budgetSource ?? "none");
       setBudgetLimit(state.budgetLimit ?? null);
       // 对比选择与 reload 语义一致：链接显式带 sel 才覆盖，否则保留本机已存选择。
@@ -406,6 +408,11 @@ function App() {
         ),
     [analysis, focus, creator, query, onlyFront, budgetSource, budgetLimit],
   );
+  // chip 计数与探索页厂商下拉同口径：analysis.rows 全量，不被 focus / 搜索提前裁剪。
+  const exploreChips = useMemo(
+    () => vendorChipCounts(analysis.rows),
+    [analysis.rows],
+  );
   // 覆盖口径差异：无论当前处于哪种覆盖门槛，都并排给出严格口径与探索口径的对照。
   const scopeDiff = useMemo(
     () =>
@@ -477,6 +484,9 @@ function App() {
       costSource,
       focus,
       query,
+      // 探索页厂商与「仅看前沿」：chip / 复选框的激活态必须入链，否则同一链接复现不出同一列表。
+      creator: creator ?? "",
+      onlyFront,
       budgetSource,
       budgetLimit,
       selection,
@@ -508,6 +518,8 @@ function App() {
     costSource,
     focus,
     query,
+    creator,
+    onlyFront,
     budgetSource,
     budgetLimit,
     selection,
@@ -698,11 +710,6 @@ function App() {
           ))}
         </div>
       ),
-    },
-    {
-      title: "配置 / 数据",
-      width: 200,
-      render: (_, r) => <EvidenceBadges model={r} sources={data?.sources} />,
     },
     {
       title: "前沿 / 状态",
@@ -1295,6 +1302,12 @@ function App() {
                   />
                 </div>
               </div>
+              <CreatorChips
+                chips={exploreChips}
+                creator={creator}
+                onChange={setCreator}
+                className="px-[24px] pb-[14px] max-760:px-[17px]"
+              />
               <Table
                 rowKey="id"
                 columns={columns}
@@ -1305,7 +1318,7 @@ function App() {
                   pageSizeOptions: [15, 30, 60],
                   showTotal: (n) => `${n} 个模型族`,
                 }}
-                scroll={{ x: 1250 }}
+                scroll={{ x: 1000 }}
                 size="middle"
                 rowClassName={(r) => (r.openFrontier ? "frontier-row" : "")}
               />
@@ -1914,7 +1927,7 @@ function App() {
             GPU、运维和利用率成本。成本缺失、非正或低于显示精度不填零，也不放入对数轴。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            若另一模型成本不高且综合分不低，并至少一项严格更优，则该模型被支配。前沿图中以最便宜的前沿模型为锚点绘制「被支配区」：该锚点同时是前沿上综合分最高的点，其右下方整个区域内的模型都被它以更低成本、更高综合分支配。连线只是视觉引导，不代表两个模型之间存在可连续插值的选项。标签重叠时会自动隐藏，可通过悬浮或表格查看。
+            若另一模型成本不高且综合分不低，并至少一项严格更优，则该模型被支配。前沿图中悬浮任一全球前沿模型，即标出它支配的区域：该模型右下方整个矩形内的模型，都被它以更低成本、更高综合分同时支配，标签注明其中模型数；被支配模型的悬浮提示会反向列出支配者。连线只是视觉引导，不代表两个模型之间存在可连续插值的选项。标签重叠时会自动隐藏，可通过悬浮或表格查看。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             数据质量与配置差异

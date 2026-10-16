@@ -28,11 +28,14 @@ export function ConfigurationBadge({ model }) {
     </Tooltip>
   );
 }
+// 列表 / 抽屉里的证据标签组：只渲染条件性数据提示（估算、历史配置、来源被排除或抓取失败）。
+// 配置一致性徽标 98% 以上都是同一句「配置信息不足」，作为逐行标签是纯噪声，已下沉到
+// ConfigurationDetails（模型详情与对比页「配置一致性与数据提示」），那里有逐源明细与原因。
 export function EvidenceBadges({ model, sources }) {
   const flags = evidenceFlags(model, sources);
+  if (!flags.length) return null;
   return (
     <div className="evidence-badges">
-      <ConfigurationBadge model={model} />
       {flags.map((f) => (
         <Tag key={f.key} color={f.color}>
           {f.label}

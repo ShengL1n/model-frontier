@@ -23,7 +23,6 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { costFormat, money, NAMES } from "./presentation.mjs";
-import { dominatedAnchor } from "./analysis.mjs";
 echarts.use([
   ScatterChart,
   LineChart,
@@ -62,7 +61,11 @@ export default function Chart({
 }) {
   const element = useRef(),
     container = useRef(),
-    callback = useRef(onSelect);
+    callback = useRef(onSelect),
+    // 悬浮斩杀区的绘制上下文：第二个副作用每次重算后刷新，事件闭包经它取最新数据
+    zoneContext = useRef(null),
+    // 当前已绘制区域的锚点 id：口径重算会整表重建并抹掉区域，必须随之作废重绘
+    paintedZone = useRef(null);
   // 图表事件闭包经 ref 取最新 onSelect；渲染期不写 ref，统一放到副作用阶段
   useEffect(() => {
     callback.current = onSelect;
@@ -85,6 +88,66 @@ export default function Chart({
     chart.on("click", (p) => {
       if (p.data?.id) callback.current(p.data.id);
     });
+    // 斩杀区跟随鼠标：悬浮全球前沿模型即画出它支配的右下方矩形（该模型右上→轴缘），
+    // 并注明其中模型数；悬浮非前沿模型或离开画布时撤下。矩形挂在「全球前沿」系列上，
+    // 随该图例一起显隐，不拦截指向散点的事件（markArea 为 silent）。
+    // 以 mousemove 而非 mouseover 驱动：zrender 的 _hovered 在指针离开画布时并不重置，
+    // 重新进入并停在同一元素上不会补发 mouseover，区域会「消失后不再回来」。
+    // painted 去重：mousemove 高频触发，只有锚点变化时才写 option。
+    // 任何新的绘制意图都要取消待执行的撤下：zrender 单次 mousemove 内先派发旧点的
+    // mouseout 再派发新点的 mousemove，若不清定时器，60ms 后会连同新区域一起抹掉。
+    let retract = 0;
+    const paintZone = (row) => {
+      clearTimeout(retract);
+      const id = row?.id ?? null;
+      if (id === paintedZone.current) return;
+      paintedZone.current = id;
+      const context = zoneContext.current;
+      const killed =
+        row && context
+          ? context.plot.filter(
+              (o) => o.id !== row.id && o.dominatedBy?.includes(row.name),
+            )
+          : [];
+      chart.setOption({
+        animation: false,
+        series: [
+          {
+            id: "global-frontier",
+            markArea: killed.length
+              ? {
+                  silent: true,
+                  itemStyle: { color: "rgba(224,101,79,.08)" },
+                  label: {
+                    show: true,
+                    position: "insideBottomRight",
+                    distance: 10,
+                    color: "#b0584a",
+                    fontSize: 10,
+                    formatter: `被 ${row.name} 支配 · ${killed.length} 个模型`,
+                  },
+                  data: [
+                    [
+                      { xAxis: row.cost, yAxis: 0 },
+                      { xAxis: context.axisMax, yAxis: row.composite },
+                    ],
+                  ],
+                }
+              : { silent: true, data: [] },
+          },
+        ],
+      });
+    };
+    // 移到画布空白处若没有 mousemove 事件兜底，由 mouseout 延迟撤下；
+    // 60ms 窗口留给紧随新点的 mousemove 取消。
+    chart.on("mousemove", (p) =>
+      paintZone(p.data?.row?.frontier ? p.data.row : null),
+    );
+    chart.on("mouseout", () => {
+      clearTimeout(retract);
+      retract = setTimeout(() => paintZone(null), 60);
+    });
+    chart.on("globalout", () => paintZone(null));
     chart.on("datazoom", () => {
       const z = chart.getOption().dataZoom?.[0];
       setZoomed(z?.start > 0 || z?.end < 100);
@@ -95,6 +158,7 @@ export default function Chart({
       setExpanded(document.fullscreenElement === container.current);
     document.addEventListener("fullscreenchange", fullscreen);
     return () => {
+      clearTimeout(retract);
       node.removeEventListener("wheel", nativeScroll, true);
       observer.disconnect();
       document.removeEventListener("fullscreenchange", fullscreen);
@@ -107,8 +171,11 @@ export default function Chart({
     if (!chart) return;
     const plot = rows.filter((r) => r.plottable),
       isRelative = costSource === "composite";
-    const areaAnchor = dominatedAnchor(plot),
-      axisMax = plot.length ? Math.max(...plot.map((r) => r.cost)) * 1.4 : 100;
+    const axisMax = plot.length
+      ? Math.max(...plot.map((r) => r.cost)) * 1.4
+      : 100;
+    zoneContext.current = { plot, axisMax };
+    paintedZone.current = null;
     const point = (r) => ({
       id: r.id,
       name: r.name,
@@ -137,7 +204,8 @@ export default function Chart({
     });
     const open = plot.filter((r) => r.openWeights === true),
       closed = plot.filter((r) => r.openWeights !== true);
-    const line = (name, filter, color, dashed) => ({
+    const line = (name, filter, color, dashed, id) => ({
+      id,
       name,
       type: "line",
       data: plot
@@ -168,7 +236,7 @@ export default function Chart({
         aria: {
           enabled: true,
           description:
-            "模型成本与综合能力散点图，左上方代表更低成本与更高能力。下方表格提供相同数据。",
+            "模型成本与综合能力散点图，左上方代表更低成本与更高能力。悬浮全球前沿模型可标出它支配的区域；下方表格提供相同数据。",
         },
         grid: { left: 55, right: 35, top: 44, bottom: 78 },
         tooltip: {
@@ -189,7 +257,11 @@ export default function Chart({
                   `<div class="flex justify-between py-[4px] text-[11px] text-[#8295a2]"><span>${esc(NAMES[s])}</span><b class="font-medium tabular-nums text-[#4b6573]">${money(r.representatives[s]?.costTask)}</b></div>`,
               )
               .join("");
-            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-760:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">综合能力</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> / 100</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div><div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
+            // 被支配模型在 tooltip 里直接点名支配者，与图上跟随鼠标的斩杀区互为反向查询
+            const dominated = r.dominatedBy?.length
+              ? `<div class="mx-[18px] border-t border-t-[#edf1f4] px-[18px] py-[10px] text-[10px] leading-[1.7] text-[#a9635a]">被 ${esc(r.dominatedBy.slice(0, 2).join("、"))}${r.dominatedBy.length > 2 ? ` 等 ${r.dominatedBy.length} 个前沿模型` : ""}同时以更低成本、更高综合分支配</div>`
+              : "";
+            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-760:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">综合能力</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> / 100</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div>${dominated}<div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
           },
         },
         legend: {
@@ -273,35 +345,13 @@ export default function Chart({
           },
         ],
         series: [
-          (() => {
-            const globalLine = line(
-              "全球前沿",
-              (r) => r.frontier,
-              "#8398ad",
-              true,
-            );
-            // 被支配区：最便宜的前沿模型支配其右下方整个矩形（成本更高且综合分更低），随「全球前沿」图例一起显隐。
-            if (areaAnchor)
-              globalLine.markArea = {
-                silent: true,
-                itemStyle: { color: "rgba(224,101,79,.07)" },
-                label: {
-                  show: true,
-                  position: "insideBottomRight",
-                  distance: 10,
-                  color: "#b0584a",
-                  fontSize: 10,
-                  formatter: `被支配区 · ${areaAnchor.name}`,
-                },
-                data: [
-                  [
-                    { xAxis: areaAnchor.cost, yAxis: 0 },
-                    { xAxis: axisMax, yAxis: areaAnchor.composite },
-                  ],
-                ],
-              };
-            return globalLine;
-          })(),
+          line(
+            "全球前沿",
+            (r) => r.frontier,
+            "#8398ad",
+            true,
+            "global-frontier",
+          ),
           line("开放权重前沿", (r) => r.openFrontier, "#128574", false),
           {
             name: "闭源 / 未确认",
@@ -479,7 +529,7 @@ export default function Chart({
       <div className="flex items-center justify-center gap-[7px] text-[9px] text-[#9aabb5] mt-[12px] leading-[1.7] max-760:text-[8px] max-760:gap-[5px] max-760:mt-[11px] max-760:mx-[4px] max-760:leading-[1.8]">
         <DragOutlined aria-hidden="true" className="text-[12px]" />
         <span>
-          左上方更优。阴影区域内的模型都被标注的前沿模型同时以更低成本、更高综合分支配；拖动平移，按钮或滑块缩放，滚轮用于页面滚动
+          左上方更优。悬浮任一全球前沿模型，即标出它同时以更低成本、更高综合分支配的区域；拖动平移，按钮或滑块缩放，滚轮用于页面滚动
         </span>
       </div>
     </div>

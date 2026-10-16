@@ -110,3 +110,12 @@ test("only the first question mark splits the page, and spaces survive a round t
     "a b?c",
   );
 });
+test("explore display state (creator, onlyFront) round trips and defaults stay out", () => {
+  assert.equal(encodeShareState({ creator: "", onlyFront: false }), "");
+  const round = decodeShareState(
+    shareHash("explore", { creator: "Z AI", onlyFront: true }),
+  );
+  assert.equal(round.page, "explore");
+  assert.equal(round.state.creator, "Z AI");
+  assert.equal(round.state.onlyFront, true);
+});

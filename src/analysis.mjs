@@ -71,17 +71,6 @@ export function pareto(rows) {
       ),
   );
 }
-// 被支配区锚点：最便宜的前沿点同时也是前沿上综合分最高的点，其右下方整个矩形内的模型都被它
-// 「以更低成本达到更高综合分」支配。返回 null 表示当前可见模型中没有前沿点，不画区域。
-export function dominatedAnchor(rows) {
-  const front = rows.filter(
-    (r) =>
-      r.frontier && Number.isFinite(r.cost) && Number.isFinite(r.composite),
-  );
-  return front.length
-    ? [...front].sort((a, b) => a.cost - b.cost || b.composite - a.composite)[0]
-    : null;
-}
 export const COST_SOURCES = ["aa", "vals", "livebench"];
 function median(values) {
   const a = [...values].sort((a, b) => a - b);

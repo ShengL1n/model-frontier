@@ -9,7 +9,6 @@ import {
   combinedCost,
   frontierStability,
   sourceAudit,
-  dominatedAnchor,
 } from "../src/analysis.mjs";
 import { familyKey, aggregate } from "../server/identity.mjs";
 const model = (id, records, openWeights = true) => ({
@@ -39,18 +38,6 @@ test("Pareto retains ties, rejects equal-score expensive choices", () => {
     pareto(rows).map((r) => r.id),
     ["a", "c", "d"],
   );
-});
-test("dominated anchor is the cheapest frontier point, tie-broken by higher score, and vanishes without frontier", () => {
-  const rows = [
-    { id: "mid", cost: 2, composite: 80, frontier: true },
-    { id: "cheap", cost: 1, composite: 50, frontier: true },
-    { id: "tie", cost: 1, composite: 70, frontier: true },
-    { id: "weak", cost: 0.5, composite: 40, frontier: false },
-    { id: "unflagged", cost: 0.2, composite: 95, frontier: false },
-  ];
-  assert.equal(dominatedAnchor(rows).id, "tie");
-  assert.equal(dominatedAnchor(rows.filter((r) => !r.frontier)), null);
-  assert.equal(dominatedAnchor([]), null);
 });
 test("missing-source models remain visible but cannot silently enter strict frontier", () => {
   const r = analyze(

@@ -33,6 +33,7 @@ import {
   applyBudget,
   budgetSummary,
   livebenchSuiteKeys,
+  vendorChipCounts,
   SOURCE_IDS,
 } from "./portal.mjs";
 import CompareChart from "./CompareChart.jsx";
@@ -84,6 +85,63 @@ const nameCell = (r, onSelect, id = r.id) => (
     </span>
   </button>
 );
+// 厂商快捷筛选行：chip 与「排行榜厂商」下拉同源（creator 字段），再次点击取消；
+// 计数口径与下拉一致（当前视图完整行池），0 命中置灰避免点出空表；但激活态永不置灰——
+// 已选中的筛选必须始终可取消（切换源站后某厂商记录归零时该状态可达），禁用只针对未激活的空 chip。
+// 只改变显示，不影响分数、名次与前沿成员。
+export function CreatorChips({ chips, creator, onChange, className = "" }) {
+  return (
+    <div
+      className={
+        "creator-chips flex flex-wrap items-center gap-[7px] " + className
+      }
+      role="group"
+      aria-label="厂商快捷筛选"
+    >
+      <span className="text-[10px] font-[650] tracking-[0.06em] text-[#7b958d]">
+        厂商快捷筛选
+      </span>
+      {chips.map((chip) => {
+        const active = creator === chip.value;
+        const empty = chip.count === 0;
+        return (
+          <button
+            key={chip.value}
+            type="button"
+            aria-pressed={active}
+            disabled={empty && !active}
+            title={
+              `厂商 ${chip.value}` +
+              (chip.note ? ` · ${chip.note}` : "") +
+              " · 完整列表见「全部厂商」下拉" +
+              (active || !empty
+                ? "；再次点击取消筛选"
+                : "；当前视图暂无该厂商配置")
+            }
+            className={
+              "creator-chip inline-flex items-center gap-[5px] rounded-full border px-[10px] py-[2px] text-[11px] leading-[1.7] transition-colors " +
+              (active
+                ? "border-[#128574] bg-[#eaf5f1] font-medium text-[#0c6e5e]"
+                : "border-[#dce7e3] bg-white text-[#5f7c74] hover:border-[#a8cdc0] hover:text-[#2c6f60]") +
+              (empty && !active
+                ? " cursor-not-allowed opacity-40"
+                : " cursor-pointer")
+            }
+            onClick={() => onChange(active ? undefined : chip.value)}
+          >
+            {chip.label}
+            <small className="text-[9px] font-normal tabular-nums opacity-70">
+              {chip.count}
+            </small>
+          </button>
+        );
+      })}
+      <span className="text-[9px] text-[#9aabb5]">
+        只改变显示 · 完整列表见厂商下拉
+      </span>
+    </div>
+  );
+}
 
 export function Overview({
   models,
@@ -366,6 +424,8 @@ export function Rankings({
     [models, view, nativeEstimates, nativeHistorical],
   );
   const pool = view === "fusion" ? ranked : native;
+  // chip 计数与厂商下拉同口径：当前视图完整行池，不被搜索 / 开放状态提前裁剪。
+  const chips = useMemo(() => vendorChipCounts(pool), [pool]);
   // 预算筛选只作用于融合总榜：单榜视图保留源站全部配置作原始证据，不参与预算截断。
   const budgeted = useMemo(
     () => (view === "fusion" ? applyBudget(pool, budget) : pool),
@@ -479,7 +539,7 @@ export function Rankings({
           ...sourceColumns,
           ...suiteColumns,
           {
-            title: "配置 / 数据",
+            title: "数据提示",
             width: 210,
             render: (_, r) => <EvidenceBadges model={r} sources={sources} />,
           },
@@ -706,7 +766,13 @@ export function Rankings({
       >
         {view === "fusion" && controls}
         <section className="ranking-table rounded-[13px] border border-line bg-surface shadow-card">
-          <div className="ranking-filters flex flex-wrap items-center gap-[10px] px-[21px] pt-[20px] pb-[12px] max-760:gap-[9px] max-760:px-[15px] max-760:pt-[17px]">
+          <CreatorChips
+            chips={chips}
+            creator={creator}
+            onChange={(value) => onRanking({ creator: value })}
+            className="px-[21px] pt-[20px] pb-[10px] max-760:px-[15px]"
+          />
+          <div className="ranking-filters flex flex-wrap items-center gap-[10px] px-[21px] pt-[10px] pb-[12px] max-760:gap-[9px] max-760:px-[15px] max-760:pt-[13px]">
             <Input
               aria-label="排行榜搜索"
               prefix={<SearchOutlined aria-hidden="true" />}

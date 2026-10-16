@@ -38,6 +38,34 @@ export function filterModels(
       (!scoredOnly || Number.isFinite(r.composite)),
   );
 }
+// 厂商快捷筛选：与同行「全部厂商」下拉同源于 creator 字段，只改变显示，不参与评分。
+// 固定编辑口径（非数据宣称）：全局基准 + 中国前沿各取最佳综合分领先的厂商，
+// 覆盖帕累托前沿与顶尖性能两条线；标签用常见品牌名，note 只补充品牌名看不出的事实
+// （tooltip 首段已给出源站 creator 字符串，note 不重复它）。
+// 顺序按当前快照各厂商最佳综合分降序固定排布，不随筛选变化；激活态经 cr 参数入分享链接、随 CSV 导出入链。
+// 完整 61 家始终保留在厂商下拉与搜索中，chip 只是快捷方式，不是白名单。
+export const VENDOR_CHIPS = [
+  { value: "Anthropic", label: "Anthropic" },
+  { value: "Google", label: "Gemini" },
+  { value: "Meta", label: "Meta", note: "Llama / Muse 系列" },
+  { value: "OpenAI", label: "OpenAI" },
+  { value: "Xiaomi", label: "MiMo" },
+  { value: "DeepSeek", label: "DeepSeek" },
+  { value: "Z AI", label: "GLM" },
+  { value: "Kimi", label: "Kimi" },
+  { value: "StepFun", label: "Step" },
+  { value: "Alibaba", label: "Qwen" },
+];
+// 计数口径与相邻的厂商下拉一致：统计当前视图的完整行池，不被搜索 / 开放状态提前裁剪；
+// count 为 0 表示该视图没有对应厂商配置，chip 置灰，避免点出空表。
+export function vendorChipCounts(rows, chips = VENDOR_CHIPS) {
+  const counts = new Map();
+  for (const row of rows) {
+    const creator = row?.creator;
+    if (creator) counts.set(creator, (counts.get(creator) ?? 0) + 1);
+  }
+  return chips.map((chip) => ({ ...chip, count: counts.get(chip.value) ?? 0 }));
+}
 export function nativeRanking(
   models,
   source,

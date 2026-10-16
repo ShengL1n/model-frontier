@@ -36,7 +36,7 @@ try {
   await page.screenshot({ path: "test-artifacts/history.png", fullPage: true });
   await history.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("tab", { name: "融合排行榜", exact: true }).click();
-  await page.locator(".ranking-table .evidence-badges").first().waitFor();
+  await page.locator(".ranking-main-table tr[data-row-key]").first().waitFor();
   await page.getByRole("switch", { name: "排除历史配置", exact: true }).check();
   await page
     .getByRole("switch", { name: "排除过期或失败缓存", exact: true })
