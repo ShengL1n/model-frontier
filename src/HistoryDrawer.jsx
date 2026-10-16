@@ -172,9 +172,9 @@ export default function HistoryDrawer({
         {(error || data?.error) && (
           <Alert type="warning" showIcon title={error ?? data.error} />
         )}
-        <div className="flex gap-[12px] my-[20px] max-[760px]:flex-col">
+        <div className="flex gap-[12px] my-[20px] max-760:flex-col">
           <Select
-            className="w-[55%] max-[760px]:w-full"
+            className="w-[55%] max-760:w-full"
             virtual={false}
             aria-label="历史快照"
             placeholder="选择历史快照"

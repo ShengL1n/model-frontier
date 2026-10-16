@@ -105,15 +105,15 @@ export function Overview({
     [models, includeEstimated],
   );
   const leaders = (items, label, icon) => (
-    <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-[1180px]:p-[20px] max-[760px]:p-[20px]">
+    <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-1180:p-[20px] max-760:p-[20px]">
       <div className="portal-section-heading">
         <div>
-          <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-[760px]:text-[8px]">
+          <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
             {label === "综合能力领先"
               ? "OVERALL LEADERS"
               : "OPEN WEIGHT LEADERS"}
           </span>
-          <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+          <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
             {icon}
             {label}
           </h2>
@@ -144,7 +144,7 @@ export function Overview({
       ) : (
         <Empty description="当前评分口径下没有候选模型" />
       )}
-      <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-[760px]:text-[10px]">
+      <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         {label === "综合能力领先"
           ? "同一评分口径下的综合分顺序，不要求成本已披露。"
           : "在开放权重模型内排序；分数保持全球样本口径。"}{" "}
@@ -156,13 +156,13 @@ export function Overview({
     <div className="min-w-0">
       <section className="portal-hero">
         <div>
-          <div className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-[760px]:text-[8px]">
+          <div className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
             THREE SOURCES. ONE WORKSPACE.
           </div>
-          <h2 className="mt-[14px] mb-[10px] text-[28px] font-semibold leading-[1.45] tracking-[-0.04em] text-[#203e3b] max-[1180px]:text-[25px] max-[760px]:text-[24px]">
+          <h2 className="mt-[14px] mb-[10px] text-[28px] font-semibold leading-[1.45] tracking-[-0.04em] text-[#203e3b] max-1180:text-[25px] max-760:text-[24px]">
             从榜单，到你的模型选择
           </h2>
-          <p className="m-0 max-w-[600px] text-[13px] leading-[1.95] text-[#5f7c77] max-[760px]:text-[12px]">
+          <p className="m-0 max-w-[600px] text-[13px] leading-[1.95] text-[#5f7c77] max-760:text-[12px]">
             先看能力排名，再核对任务表现、价格与配置。三个来源的证据并排呈现，每一个综合结论都能回到原始数据。
           </p>
           <div className="hero-actions">
@@ -186,7 +186,7 @@ export function Overview({
           {SOURCE_IDS.map((s, i) => (
             <div
               key={s}
-              className="flex items-center gap-[12px] rounded-[9px] border border-[#e1ebe7] bg-[#ffffffc9] px-[16px] py-[13px] max-[760px]:p-[12px]"
+              className="flex items-center gap-[12px] rounded-[9px] border border-[#e1ebe7] bg-[#ffffffc9] px-[16px] py-[13px] max-760:p-[12px]"
             >
               <span className={"source-symbol " + (SOURCE_TONE[s] ?? "")}>
                 {["AA", "V", "LB"][i]}
@@ -219,18 +219,18 @@ export function Overview({
       <SourceQuality sources={data?.sources} />
       <QualityNote />
       <HistorySummary history={data?.history} onOpen={onOpenHistory} />
-      <div className="mb-[20px] grid grid-cols-[1fr_1fr] gap-[20px] max-[1180px]:gap-[16px] max-[760px]:grid-cols-[minmax(0,1fr)]">
+      <div className="mb-[20px] grid grid-cols-[1fr_1fr] gap-[20px] max-1180:gap-[16px] max-760:grid-cols-[minmax(0,1fr)]">
         {leaders(ranked, "综合能力领先", <TrophyOutlined aria-hidden="true" />)}
         {leaders(open, "开放权重领先", <UnlockOutlined aria-hidden="true" />)}
       </div>
-      <div className="mb-[20px] grid grid-cols-[1fr_1fr] gap-[20px] max-[1180px]:gap-[16px] max-[760px]:grid-cols-[minmax(0,1fr)]">
-        <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-[1180px]:p-[20px] max-[760px]:p-[20px]">
+      <div className="mb-[20px] grid grid-cols-[1fr_1fr] gap-[20px] max-1180:gap-[16px] max-760:grid-cols-[minmax(0,1fr)]">
+        <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-1180:p-[20px] max-760:p-[20px]">
           <div className="portal-section-heading">
             <div>
-              <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-[760px]:text-[8px]">
+              <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
                 EVIDENCE COVERAGE
               </span>
-              <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+              <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
                 模型覆盖与证据
               </h2>
             </div>
@@ -263,17 +263,17 @@ export function Overview({
               </div>
             ))}
           </div>
-          <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-[760px]:text-[10px]">
+          <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             按当前质量排除与估算开关统计三站有效分数，与权重无关。仅一榜或无有效分数的模型仍可在模型库中检索。
           </p>
         </section>
-        <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-[1180px]:p-[20px] max-[760px]:p-[20px]">
+        <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-1180:p-[20px] max-760:p-[20px]">
           <div className="portal-section-heading">
             <div>
-              <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-[760px]:text-[8px]">
+              <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
                 EXPLORE WITH CONTEXT
               </span>
-              <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+              <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
                 换个视角看模型
               </h2>
             </div>
@@ -656,13 +656,13 @@ export function Rankings({
       <section className="ranking-intro rounded-[13px] border border-line bg-surface shadow-card">
         <div className="portal-section-heading">
           <div>
-            <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-[760px]:text-[8px]">
+            <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
               BENCHMARK EXPLORER
             </span>
-            <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+            <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
               融合排行榜与完整模型库
             </h2>
-            <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-[760px]:text-[11px]">
+            <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
               综合能力不以成本披露为门槛。单榜视图保留每条源配置，便于回到原始证据。
             </p>
           </div>
@@ -698,15 +698,15 @@ export function Rankings({
       </section>
       <div
         className={
-          "mb-[22px] grid items-start gap-[19px] max-[1180px]:gap-[16px] max-[760px]:flex max-[760px]:flex-col max-[760px]:gap-[16px] " +
+          "mb-[22px] grid items-start gap-[19px] max-1180:gap-[16px] max-760:flex max-760:flex-col max-760:gap-[16px] " +
           (view !== "fusion"
             ? "grid-cols-[minmax(0,1fr)]"
-            : "grid-cols-[235px_minmax(0,1fr)] max-[1180px]:grid-cols-[215px_minmax(0,1fr)]")
+            : "grid-cols-[235px_minmax(0,1fr)] max-1180:grid-cols-[215px_minmax(0,1fr)]")
         }
       >
         {view === "fusion" && controls}
         <section className="ranking-table rounded-[13px] border border-line bg-surface shadow-card">
-          <div className="ranking-filters flex flex-wrap items-center gap-[10px] px-[21px] pt-[20px] pb-[12px] max-[760px]:gap-[9px] max-[760px]:px-[15px] max-[760px]:pt-[17px]">
+          <div className="ranking-filters flex flex-wrap items-center gap-[10px] px-[21px] pt-[20px] pb-[12px] max-760:gap-[9px] max-760:px-[15px] max-760:pt-[17px]">
             <Input
               aria-label="排行榜搜索"
               prefix={<SearchOutlined aria-hidden="true" />}
@@ -774,7 +774,7 @@ export function Rankings({
               </>
             )}
           </div>
-          <div className="flex flex-wrap justify-between gap-[8px] px-[21px] pb-[16px] text-[10px] leading-[1.8] text-[#627b89] max-[760px]:px-[15px] max-[760px]:pb-[14px]">
+          <div className="flex flex-wrap justify-between gap-[8px] px-[21px] pb-[16px] text-[10px] leading-[1.8] text-[#627b89] max-760:px-[15px] max-760:pb-[14px]">
             <span>
               {filtered.length} 条{view === "fusion" ? "模型族" : "源配置"} ·
               名次基于筛选前的{view === "fusion" ? "综合评分" : "单榜样本"}
@@ -801,7 +801,7 @@ export function Rankings({
           )}
           {scopePanel}
           {view !== "fusion" && (
-            <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-[760px]:text-[10px]">
+            <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
               {NAMES[view]}{" "}
               的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。
             </p>
@@ -836,7 +836,7 @@ export function Rankings({
               showTotal: (n) => `${n} 条记录`,
             }}
           />
-          <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-[760px]:text-[10px]">
+          <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             {view === "fusion"
               ? `综合分为当前样本内的排名分加权值，不是正确率。AA 估算分${includeEstimated ? "已启用" : "默认排除"}，榜单覆盖不额外加分。`
               : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
@@ -945,13 +945,13 @@ export function Comparison({
       <section className="compare-selector rounded-[13px] border border-line bg-surface shadow-card">
         <div className="portal-section-heading">
           <div>
-            <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-[760px]:text-[8px]">
+            <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
               SIDE BY SIDE
             </span>
-            <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+            <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
               模型对比
             </h2>
-            <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-[760px]:text-[11px]">
+            <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
               保留各站的独立任务与计价口径；最多选择 4
               个模型，选择会保存在本机。
             </p>
@@ -995,18 +995,18 @@ export function Comparison({
         </section>
       ) : (
         <>
-          <section className="mb-[20px] rounded-[13px] border border-line bg-surface px-[25px] py-[23px] shadow-card max-[760px]:px-[16px] max-[760px]:py-[20px]">
+          <section className="mb-[20px] rounded-[13px] border border-line bg-surface px-[25px] py-[23px] shadow-card max-760:px-[16px] max-760:py-[20px]">
             <div className="portal-section-heading">
               <div>
-                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
                   配置一致性与数据提示
                 </h2>
-                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-[760px]:text-[11px]">
+                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
                   先核对每个模型在不同源站的配置，再阅读综合结果。已排除的来源不参与下方评分与成本计算，原始配置仍可在详情与单榜中查看。
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-[15px] max-[1000px]:grid-cols-1">
+            <div className="grid grid-cols-2 gap-[15px] max-1000:grid-cols-1">
               {selected.map((r) => (
                 <div key={r.id}>
                   <ConfigurationDetails model={r} />
@@ -1017,13 +1017,13 @@ export function Comparison({
             <SourceQuality sources={sources} />
             <QualityNote />
           </section>
-          <section className="mb-[20px] rounded-[13px] border border-line bg-surface p-[25px] shadow-card max-[760px]:px-[16px] max-[760px]:py-[20px]">
+          <section className="mb-[20px] rounded-[13px] border border-line bg-surface p-[25px] shadow-card max-760:px-[16px] max-760:py-[20px]">
             <div className="portal-section-heading">
               <div>
-                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
                   各榜排名分对比
                 </h2>
-                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-[760px]:text-[11px]">
+                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
                   0–100
                   为当前评分样本内的相对位置，越高越靠前。缺分或未启用的榜单不画条形。
                 </p>
@@ -1031,17 +1031,17 @@ export function Comparison({
               <Tag>同一综合评分样本</Tag>
             </div>
             <CompareChart rows={selected} />
-            <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-[760px]:text-[10px]">
+            <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
               原始分量纲不同，因此图中只比较各榜排名分；下表完整保留原始分。部分覆盖的综合分比较依据可能不同。
             </p>
           </section>
           <section className="compare-facts rounded-[13px] border border-line bg-surface shadow-card">
             <div className="portal-section-heading">
               <div>
-                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
                   能力、成本与配置明细
                 </h2>
-                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-[760px]:text-[11px]">
+                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
                   不同源的美元任务成本分别展示；不相加，也不折算成统一生产账单。
                 </p>
               </div>
@@ -1058,10 +1058,10 @@ export function Comparison({
           <section className="compare-facts rounded-[13px] border border-line bg-surface shadow-card">
             <div className="portal-section-heading">
               <div>
-                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-[760px]:text-[16px]">
+                <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
                   LiveBench 分类能力
                 </h2>
-                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-[760px]:text-[11px]">
+                <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
                   直接使用 LiveBench 各 suite
                   的原始分，不将分类能力外推到其他榜单。
                 </p>

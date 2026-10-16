@@ -15,6 +15,12 @@
   --shadow-card: 0 3px 16px rgb(30 55 72 / 2.5%);
 }
 
+/* 含边界断点变体：v4 内置 max-[Npx] 编译为严格小于（width < Npx），
+   与残余层 @media (width <= Npx) 的含边界语义相差 1px；统一用这组变体对齐旧口径 */
+@custom-variant max-1180 (@media (width <= 1180px));
+@custom-variant max-1000 (@media (width <= 1000px));
+@custom-variant max-760 (@media (width <= 760px));
+
 :root {
   font-family:
     Inter,
@@ -349,8 +355,7 @@ a {
   color: #7c939f;
 }
 
-.controls > label,
-.weight-label label {
+.controls > label {
   display: block;
   font-size: 11px;
   color: #65808e;
@@ -457,10 +462,6 @@ a {
   white-space: nowrap;
 }
 
-.chart-legend button.inactive {
-  opacity: 0.35;
-}
-
 .chart-actions {
   display: flex;
   flex-shrink: 0;
@@ -529,7 +530,9 @@ a {
   background: #f7faf9;
 }
 
-.cost-reference > div {
+/* 首个 div 是「1 倍成本基准」标签，走 JSX 工具类横排渲染；
+   这里的无层规则只限定数据列，否则会压过标签上的工具类 */
+.cost-reference > div:not(:first-child) {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -542,7 +545,7 @@ a {
   border-left: 1px solid #e5edeb;
 }
 
-.cost-reference span {
+.cost-reference > div:not(:first-child) span {
   font-size: 10px;
   color: #7d918a;
 }
@@ -1088,8 +1091,7 @@ a {
   .panel-title,
   .control-help,
   .weights,
-  .formula,
-  .controls .divider {
+  .formula {
     grid-column: 1/-1;
   }
 
@@ -1191,7 +1193,7 @@ a {
     font-size: 8px;
   }
 
-  .cost-reference span {
+  .cost-reference > div:not(:first-child) span {
     font-size: 8px;
   }
 
@@ -1600,11 +1602,6 @@ a {
   font-size: 11px;
 }
 
-.ranking-table > .portal-footnote {
-  padding: 0 21px 18px;
-  margin-top: 8px;
-}
-
 .source-score {
   font-variant-numeric: tabular-nums;
 }
@@ -1634,8 +1631,7 @@ a {
   line-height: 1.6;
 }
 
-.compare-selector,
-.compare-visual {
+.compare-selector {
   padding: 25px;
   margin-bottom: 20px;
 }
@@ -1833,8 +1829,7 @@ a {
     width: 100%;
   }
 
-  .compare-selector,
-  .compare-visual {
+  .compare-selector {
     padding: 20px 16px;
   }
 

@@ -104,13 +104,13 @@ export function SourceQuality({ sources, compact = false }) {
                       : "已成功获取"}
               </Tag>
             </div>
-            <dl className="mt-[12px] mb-0 grid grid-cols-1 gap-[5px] text-[10px] leading-[1.8] max-[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] max-[760px]:gap-[7px_10px]">
+            <dl className="mt-[12px] mb-0 grid grid-cols-1 gap-[5px] text-[10px] leading-[1.8] max-760:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] max-760:gap-[7px_10px]">
               <dt className="text-[#6e8492]">源站版本 / 更新标签</dt>
-              <dd className="m-0 mb-[4px] text-[#345967] [overflow-wrap:anywhere] max-[760px]:m-0">
+              <dd className="m-0 mb-[4px] text-[#345967] [overflow-wrap:anywhere] max-760:m-0">
                 {source?.sourceDate ?? "源站未披露"}
               </dd>
               <dt className="text-[#6e8492]">最近成功获取</dt>
-              <dd className="m-0 mb-[4px] text-[#345967] [overflow-wrap:anywhere] max-[760px]:m-0">
+              <dd className="m-0 mb-[4px] text-[#345967] [overflow-wrap:anywhere] max-760:m-0">
                 {formatTime(source?.fetchedAt)}
               </dd>
             </dl>
@@ -123,10 +123,10 @@ export function SourceQuality({ sources, compact = false }) {
 export function HistorySummary({ history, onOpen }) {
   const latest = history?.latest;
   return (
-    <section className="panel p-[23px_25px] my-[20px] max-[760px]:p-[20px_16px]">
+    <section className="panel p-[23px_25px] my-[20px] max-760:p-[20px_16px]">
       {/* portal-section-heading 类保留：残余规则 `.portal-section-heading .ant-btn` 与 `h2 .anticon` 仍以它为钩子；
           h2 样式按原样留在 CSS（全局无分层 h2 规则会压过分层工具类，无法内联） */}
-      <div className="portal-section-heading flex items-start justify-between gap-[18px] pb-[20px] max-[1180px]:flex-wrap max-[760px]:gap-[12px] max-[760px]:pb-[14px]">
+      <div className="portal-section-heading flex items-start justify-between gap-[18px] pb-[20px] max-1180:flex-wrap max-760:gap-[12px] max-760:pb-[14px]">
         <div>
           <span className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86]">
             OBSERVED CHANGES
@@ -161,7 +161,7 @@ export function HistorySummary({ history, onOpen }) {
             最近归档：{formatTime(history?.lastRecordedAt)}
           </span>
         </div>
-        <p className="text-[12px] leading-[1.9] text-[#4e6f78] max-[760px]:text-[11px]">
+        <p className="text-[12px] leading-[1.9] text-[#4e6f78] max-760:text-[11px]">
           {!latest
             ? "尚未建立起始快照。"
             : latest.kind === "baseline"
@@ -169,7 +169,7 @@ export function HistorySummary({ history, onOpen }) {
               : `最近一次变化：新增收录 ${latest.counts.added} 条、不再列出 ${latest.counts.removed} 条、指标或状态更新 ${latest.counts.updated} 条源配置。`}
         </p>
       </div>
-      <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-[760px]:text-[10px]">
+      <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         <InfoCircleOutlined aria-hidden="true" />{" "}
         相同数据不重复归档；抓取失败沿用成功缓存，不计作删除。综合分受比较样本与设置影响，不作为历史能力涨跌依据。
       </p>
