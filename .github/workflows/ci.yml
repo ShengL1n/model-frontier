@@ -5,12 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+# 连续推送时取消上一轮，避免重复占用 runner；PR 与主干各自独立排队
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 只读仓库内容即足够；产物上传走 Actions 运行时，不依赖额外权限
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-26.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      # action 一律钉完整提交 SHA（tag 可被静默改写，供应链风险），版本号见行尾或上方注释
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: npm
@@ -21,26 +34,29 @@ jobs:
       - run: npm run test:coverage
       - run: npm run build
       # 三套 E2E 是行为门禁（图表交互、门户六页、证据与历史流），必须在构建产物上跑：
-      # 测试以 channel: "chrome" 启动真实 Chrome，并请求运行中的生产服务。
+      # 测试以 channel: "chrome" 启动真实 Chrome，并请求运行中的生产服务
       - name: 启动生产服务
         run: |
           npm start &
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:4317/api/status > /dev/null && exit 0
+          n=0
+          until curl -sf http://127.0.0.1:4317/api/status > /dev/null; do
+            n=$((n + 1))
+            if [ "$n" -ge 30 ]; then
+              echo "服务 30 秒内未就绪"
+              exit 1
+            fi
             sleep 1
           done
-          echo "服务 30 秒内未就绪"
-          exit 1
       - name: E2E：前沿探索
         run: npm run test:e2e
       - name: E2E：门户六页
         run: npm run test:portal
       - name: E2E：证据与历史
         run: npm run test:evidence
-      # 失败现场（截图）随产物上传，便于直接定位，不进仓库
+      # actions/upload-artifact v4：失败现场（截图）随产物上传，便于定位，不进仓库
       - name: 上传失败现场
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: e2e-artifacts
           path: test-artifacts/

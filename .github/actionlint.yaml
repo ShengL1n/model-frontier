@@ -1,0 +1,9 @@
+# actionlint 配置：登记 runs-on 使用的自定义/新生标签。
+#
+# ubuntu-26.04 是 GitHub 托管镜像（actions/runner-images 已发布 Ubuntu2604，
+# 本仓库 CI 在该标签上实测跑通），但 actionlint 内置标签库滞后于镜像发布，
+# 会误报 unknown label。上一个 CI 提交已把 runs-on 从 ubuntu-latest 固定到
+# ubuntu-26.04（latest 将于 2026-10-19 迁移到 26），此处仅消除误报、不改变选择。
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

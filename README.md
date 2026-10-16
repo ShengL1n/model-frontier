@@ -1,5 +1,7 @@
 # 模型观测台 · Model Atlas
 
+[![CI](https://github.com/qiyangfan/model-frontier/actions/workflows/ci.yml/badge.svg)](https://github.com/qiyangfan/model-frontier/actions/workflows/ci.yml)
+
 本地 React + Ant Design + ECharts 三榜融合工作台，样式用 Tailwind v4 工具类（`src/style.css` 为 Tailwind 入口 + antd 覆盖等残余层）。直接读取 Artificial Analysis、Vals、LiveBench 的公开数据，自动发现模型，重点展示开放权重模型，不维护模型关注白名单。
 
 ## 三榜融合功能
