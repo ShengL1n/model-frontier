@@ -1,41 +1,323 @@
-import {chromium} from 'playwright';
-import assert from 'node:assert/strict';
-import {mkdir,readFile} from 'node:fs/promises';
-const base=process.env.FRONTIER_URL??'http://localhost:4317';
-const browser=await chromium.launch({channel:process.env.BROWSER_CHANNEL||'chrome',headless:true});
-const page=await browser.newPage({viewport:{width:1440,height:1080}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-const tab=async name=>{await page.getByRole('tab',{name,exact:true}).click();};
-const source=async name=>{await page.locator('.ranking-intro .ant-segmented-item').filter({hasText:name}).click();};
-const overflow=async()=>{await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);};
-try{
- await mkdir('test-artifacts',{recursive:true});
- await page.goto(base+'/#overview');await page.evaluate(()=>{localStorage.removeItem('frontier:preferences');localStorage.removeItem('frontier:comparison');});await page.reload();
- await page.getByRole('heading',{name:'综合能力领先',exact:true}).waitFor();await page.locator('.leader-row').first().waitFor();assert.equal(await page.getByRole('tab').count(),6);await overflow();await page.screenshot({path:'test-artifacts/overview.png',fullPage:true});
- await page.getByRole('button',{name:'对比开放权重领先模型',exact:true}).click();await page.getByRole('img',{name:'各榜排名分对比图',exact:true}).waitFor();assert.equal(await page.locator('.compare-facts').count(),2);await page.getByRole('cell',{name:'Artificial Analysis · 排名分',exact:true}).waitFor();await page.getByRole('cell',{name:'Vals · 排名分',exact:true}).waitFor();await page.getByRole('cell',{name:'LiveBench · 排名分',exact:true}).waitFor();assert.equal(await page.locator('.compare-selector .ant-select-selection-item').count(),3);await overflow();await page.screenshot({path:'test-artifacts/compare.png',fullPage:true});
- await page.reload();await page.getByRole('img',{name:'各榜排名分对比图',exact:true}).waitFor();assert.equal(await page.locator('.compare-selector .ant-select-selection-item').count(),3);
- await page.getByRole('button',{name:'清空对比',exact:true}).click();await page.getByText('从排行榜勾选模型，或在上方搜索添加',{exact:true}).waitFor();
- await tab('融合排行榜');await page.locator('.ranking-table .ant-table-tbody tr[data-row-key]').first().waitFor();await overflow();
- const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'导出当前榜单',exact:true}).click();const csv=await downloadPromise;assert.equal(csv.suggestedFilename(),'model-ranking.csv');const fusionCsv=await readFile(await csv.path(),'utf8');assert.ok(fusionCsv.includes('综合分'));assert.ok(fusionCsv.includes('评分口径'),'导出缺少评分口径列');assert.ok(fusionCsv.includes('数据时间'),'导出缺少数据时间列');
- const boxes=page.locator('.ranking-table .ant-table-tbody tr[data-row-key] .ant-checkbox-input');await boxes.nth(0).check();await boxes.nth(1).check();await page.getByRole('button',{name:'对比所选模型',exact:true}).click();await page.getByRole('img',{name:'各榜排名分对比图',exact:true}).waitFor();assert.equal(await page.locator('.compare-selector .ant-select-selection-item').count(),2);
- await tab('融合排行榜');await source('Artificial Analysis');await page.getByText('包含历史配置',{exact:true}).waitFor();const nativeDownload=page.waitForEvent('download');await page.getByRole('button',{name:'导出当前榜单',exact:true}).click();const native=await nativeDownload;assert.equal(native.suggestedFilename(),'aa-ranking.csv');const nativeText=await readFile(await native.path(),'utf8');assert.ok(nativeText.includes('原始总分'));assert.ok(!nativeText.includes('综合分'));
- await page.getByRole('checkbox',{name:'包含历史配置',exact:true}).check();await page.getByRole('checkbox',{name:'包含估算配置',exact:true}).check();
- await page.getByRole('textbox',{name:'排行榜搜索',exact:true}).fill('DeepSeek');await page.waitForFunction(()=>[...document.querySelectorAll('.ranking-table tr[data-row-key]')].every(r=>r.textContent.toLowerCase().includes('deepseek')));assert.ok(await page.locator('.ranking-table tr[data-row-key]').count()>0);
- await page.getByRole('textbox',{name:'排行榜搜索',exact:true}).fill('');await source('Vals');await page.getByText('Vals 的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。',{exact:true}).waitFor();await source('LiveBench');await page.getByText('LiveBench 的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。',{exact:true}).waitFor();await source('融合总榜');await page.screenshot({path:'test-artifacts/rankings.png',fullPage:true});
- // 能力维度、口径差异、预算筛选与分享链接
- await page.getByRole('checkbox',{name:'LiveBench 能力维度',exact:true}).check();await page.locator('.ranking-main-table').getByRole('columnheader',{name:/编程/}).waitFor();await page.getByRole('checkbox',{name:'LiveBench 能力维度',exact:true}).uncheck();
- await page.getByText('覆盖口径差异',{exact:true}).waitFor();
- await page.getByRole('combobox',{name:'预算成本来源',exact:true}).click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({has:page.getByText('Artificial Analysis',{exact:true})}).click();await page.getByRole('spinbutton',{name:'预算上限，美元每次任务',exact:true}).fill('1');await page.locator('.budget-note').waitFor();assert.equal(await page.getByText('该来源当前被质量排除',{exact:false}).count(),0);await overflow();
- await page.getByRole('spinbutton',{name:'预算上限，美元每次任务',exact:true}).fill('');await page.getByRole('combobox',{name:'预算成本来源',exact:true}).click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({has:page.getByText('不限制',{exact:true})}).click();
- await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:base});await page.getByRole('switch',{name:'排除历史配置',exact:true}).check();await page.getByRole('button',{name:'复制分享链接',exact:true}).click();await page.getByRole('button',{name:'已复制链接',exact:true}).waitFor();const shareLink=await page.evaluate(()=>navigator.clipboard.readText());assert.ok(shareLink.includes('#rankings?')&&shareLink.includes('eh=1')&&shareLink.includes('sel='),'分享链接缺少口径参数：'+shareLink);await page.getByRole('switch',{name:'排除历史配置',exact:true}).uncheck();
- await page.goto(base+'/#rankings?p=equal&ms=3');await page.reload();await page.locator('.scoring-context').getByText(/三榜等权/).waitFor();await page.getByText('全部 3 榜 · 严格比较',{exact:true}).waitFor();
- // 同文档粘贴分享链接（仅 hash 变化、不重载）也必须恢复口径，而不是被状态同步覆盖。
- await page.evaluate(()=>{location.hash='#rankings?cs=vals&ms=1';});await page.getByText('至少 1 榜 · 探索模式',{exact:true}).waitFor();await page.locator('.ranking-main-table').getByRole('columnheader',{name:'Vals 每次测试成本',exact:true}).waitFor();
- // 带参数链接缺省字段一律取默认值（与 reload 一致），不回落本地偏好：上一步已把 cs=vals 写入本地偏好。
- await page.goto(base+'/#rankings?p=equal&ms=1');await page.reload();await page.locator('.ranking-main-table').getByRole('columnheader',{name:'综合相对成本（基准 1 倍）',exact:true}).waitFor();
- // 共享设置只改变分析口径，对比选择跨页面保留。
- await page.getByRole('combobox',{name:'权重预设',exact:true}).click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({hasText:'三榜等权'}).click();await tab('模型对比');await page.locator('.scoring-context').getByText(/三榜等权/).waitFor();assert.equal(await page.locator('.compare-selector .ant-select-selection-item').count(),2);
- await page.setViewportSize({width:375,height:812});await overflow();await page.screenshot({path:'test-artifacts/compare-mobile.png',fullPage:true});await tab('综合总览');await overflow();await page.screenshot({path:'test-artifacts/overview-mobile.png',fullPage:true});await tab('融合排行榜');await overflow();await page.screenshot({path:'test-artifacts/rankings-mobile.png',fullPage:true});
- await page.locator('.ranking-main-table .ant-table-content').evaluate(e=>{e.scrollLeft=450;});assert.ok(await page.locator('.ranking-main-table .ant-table-content').evaluate(e=>e.scrollLeft)>0);
- await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:812,height:375});await overflow();await tab('模型对比');await overflow();await page.goBack();await page.getByRole('tab',{name:'融合排行榜',exact:true}).getAttribute('aria-selected').then(v=>assert.equal(v,'true'));assert.deepEqual(errors,[]);
- console.log(JSON.stringify({passed:true,pages:6,checks:['overview','three-source rankings','native full configurations','native export','fusion export metadata','search','row selection','comparison persistence','raw cost and suites','livebench suite columns','scope difference panel','budget filter','share link copy and restore','share defaults override local prefs','shared weights','375px pages','landscape','reduced motion'],errors},null,2));
-}catch(e){await page.screenshot({path:'test-artifacts/portal-failure.png',fullPage:true});throw e;}finally{await browser.close();}
+import { chromium } from "playwright";
+import assert from "node:assert/strict";
+import { mkdir, readFile } from "node:fs/promises";
+const base = process.env.FRONTIER_URL ?? "http://localhost:4317";
+const browser = await chromium.launch({
+  channel: process.env.BROWSER_CHANNEL || "chrome",
+  headless: true,
+});
+const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(e.message));
+const tab = async (name) => {
+  await page.getByRole("tab", { name, exact: true }).click();
+};
+const source = async (name) => {
+  await page
+    .locator(".ranking-intro .ant-segmented-item")
+    .filter({ hasText: name })
+    .click();
+};
+const overflow = async () => {
+  await page.waitForFunction(
+    () => document.documentElement.scrollWidth <= innerWidth,
+  );
+};
+try {
+  await mkdir("test-artifacts", { recursive: true });
+  await page.goto(base + "/#overview");
+  await page.evaluate(() => {
+    localStorage.removeItem("frontier:preferences");
+    localStorage.removeItem("frontier:comparison");
+  });
+  await page.reload();
+  await page
+    .getByRole("heading", { name: "综合能力领先", exact: true })
+    .waitFor();
+  await page.locator(".leader-row").first().waitFor();
+  assert.equal(await page.getByRole("tab").count(), 6);
+  await overflow();
+  await page.screenshot({
+    path: "test-artifacts/overview.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "对比开放权重领先模型", exact: true })
+    .click();
+  await page
+    .getByRole("img", { name: "各榜排名分对比图", exact: true })
+    .waitFor();
+  assert.equal(await page.locator(".compare-facts").count(), 2);
+  await page
+    .getByRole("cell", { name: "Artificial Analysis · 排名分", exact: true })
+    .waitFor();
+  await page
+    .getByRole("cell", { name: "Vals · 排名分", exact: true })
+    .waitFor();
+  await page
+    .getByRole("cell", { name: "LiveBench · 排名分", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.locator(".compare-selector .ant-select-selection-item").count(),
+    3,
+  );
+  await overflow();
+  await page.screenshot({ path: "test-artifacts/compare.png", fullPage: true });
+  await page.reload();
+  await page
+    .getByRole("img", { name: "各榜排名分对比图", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.locator(".compare-selector .ant-select-selection-item").count(),
+    3,
+  );
+  await page.getByRole("button", { name: "清空对比", exact: true }).click();
+  await page
+    .getByText("从排行榜勾选模型，或在上方搜索添加", { exact: true })
+    .waitFor();
+  await tab("融合排行榜");
+  await page
+    .locator(".ranking-table .ant-table-tbody tr[data-row-key]")
+    .first()
+    .waitFor();
+  await overflow();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出当前榜单", exact: true }).click();
+  const csv = await downloadPromise;
+  assert.equal(csv.suggestedFilename(), "model-ranking.csv");
+  const fusionCsv = await readFile(await csv.path(), "utf8");
+  assert.ok(fusionCsv.includes("综合分"));
+  assert.ok(fusionCsv.includes("评分口径"), "导出缺少评分口径列");
+  assert.ok(fusionCsv.includes("数据时间"), "导出缺少数据时间列");
+  const boxes = page.locator(
+    ".ranking-table .ant-table-tbody tr[data-row-key] .ant-checkbox-input",
+  );
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await page.getByRole("button", { name: "对比所选模型", exact: true }).click();
+  await page
+    .getByRole("img", { name: "各榜排名分对比图", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.locator(".compare-selector .ant-select-selection-item").count(),
+    2,
+  );
+  await tab("融合排行榜");
+  await source("Artificial Analysis");
+  await page.getByText("包含历史配置", { exact: true }).waitFor();
+  const nativeDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出当前榜单", exact: true }).click();
+  const native = await nativeDownload;
+  assert.equal(native.suggestedFilename(), "aa-ranking.csv");
+  const nativeText = await readFile(await native.path(), "utf8");
+  assert.ok(nativeText.includes("原始总分"));
+  assert.ok(!nativeText.includes("综合分"));
+  await page
+    .getByRole("checkbox", { name: "包含历史配置", exact: true })
+    .check();
+  await page
+    .getByRole("checkbox", { name: "包含估算配置", exact: true })
+    .check();
+  await page
+    .getByRole("textbox", { name: "排行榜搜索", exact: true })
+    .fill("DeepSeek");
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll(".ranking-table tr[data-row-key]")].every(
+      (r) => r.textContent.toLowerCase().includes("deepseek"),
+    ),
+  );
+  assert.ok(
+    (await page.locator(".ranking-table tr[data-row-key]").count()) > 0,
+  );
+  await page.getByRole("textbox", { name: "排行榜搜索", exact: true }).fill("");
+  await source("Vals");
+  await page
+    .getByText(
+      "Vals 的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。",
+      { exact: true },
+    )
+    .waitFor();
+  await source("LiveBench");
+  await page
+    .getByText(
+      "LiveBench 的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。",
+      { exact: true },
+    )
+    .waitFor();
+  await source("融合总榜");
+  await page.screenshot({
+    path: "test-artifacts/rankings.png",
+    fullPage: true,
+  });
+  // 能力维度、口径差异、预算筛选与分享链接
+  await page
+    .getByRole("checkbox", { name: "LiveBench 能力维度", exact: true })
+    .check();
+  await page
+    .locator(".ranking-main-table")
+    .getByRole("columnheader", { name: /编程/ })
+    .waitFor();
+  await page
+    .getByRole("checkbox", { name: "LiveBench 能力维度", exact: true })
+    .uncheck();
+  await page.getByText("覆盖口径差异", { exact: true }).waitFor();
+  await page
+    .getByRole("combobox", { name: "预算成本来源", exact: true })
+    .click();
+  await page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ has: page.getByText("Artificial Analysis", { exact: true }) })
+    .click();
+  await page
+    .getByRole("spinbutton", { name: "预算上限，美元每次任务", exact: true })
+    .fill("1");
+  await page.locator(".budget-note").waitFor();
+  assert.equal(
+    await page.getByText("该来源当前被质量排除", { exact: false }).count(),
+    0,
+  );
+  await overflow();
+  await page
+    .getByRole("spinbutton", { name: "预算上限，美元每次任务", exact: true })
+    .fill("");
+  await page
+    .getByRole("combobox", { name: "预算成本来源", exact: true })
+    .click();
+  await page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ has: page.getByText("不限制", { exact: true }) })
+    .click();
+  await page
+    .context()
+    .grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+  await page.getByRole("switch", { name: "排除历史配置", exact: true }).check();
+  await page.getByRole("button", { name: "复制分享链接", exact: true }).click();
+  await page.getByRole("button", { name: "已复制链接", exact: true }).waitFor();
+  const shareLink = await page.evaluate(() => navigator.clipboard.readText());
+  assert.ok(
+    shareLink.includes("#rankings?") &&
+      shareLink.includes("eh=1") &&
+      shareLink.includes("sel="),
+    "分享链接缺少口径参数：" + shareLink,
+  );
+  await page
+    .getByRole("switch", { name: "排除历史配置", exact: true })
+    .uncheck();
+  await page.goto(base + "/#rankings?p=equal&ms=3");
+  await page.reload();
+  await page
+    .locator(".scoring-context")
+    .getByText(/三榜等权/)
+    .waitFor();
+  await page.getByText("全部 3 榜 · 严格比较", { exact: true }).waitFor();
+  // 同文档粘贴分享链接（仅 hash 变化、不重载）也必须恢复口径，而不是被状态同步覆盖。
+  await page.evaluate(() => {
+    location.hash = "#rankings?cs=vals&ms=1";
+  });
+  await page.getByText("至少 1 榜 · 探索模式", { exact: true }).waitFor();
+  await page
+    .locator(".ranking-main-table")
+    .getByRole("columnheader", { name: "Vals 每次测试成本", exact: true })
+    .waitFor();
+  // 带参数链接缺省字段一律取默认值（与 reload 一致），不回落本地偏好：上一步已把 cs=vals 写入本地偏好。
+  await page.goto(base + "/#rankings?p=equal&ms=1");
+  await page.reload();
+  await page
+    .locator(".ranking-main-table")
+    .getByRole("columnheader", {
+      name: "综合相对成本（基准 1 倍）",
+      exact: true,
+    })
+    .waitFor();
+  // 共享设置只改变分析口径，对比选择跨页面保留。
+  await page.getByRole("combobox", { name: "权重预设", exact: true }).click();
+  await page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ hasText: "三榜等权" })
+    .click();
+  await tab("模型对比");
+  await page
+    .locator(".scoring-context")
+    .getByText(/三榜等权/)
+    .waitFor();
+  assert.equal(
+    await page.locator(".compare-selector .ant-select-selection-item").count(),
+    2,
+  );
+  await page.setViewportSize({ width: 375, height: 812 });
+  await overflow();
+  await page.screenshot({
+    path: "test-artifacts/compare-mobile.png",
+    fullPage: true,
+  });
+  await tab("综合总览");
+  await overflow();
+  await page.screenshot({
+    path: "test-artifacts/overview-mobile.png",
+    fullPage: true,
+  });
+  await tab("融合排行榜");
+  await overflow();
+  await page.screenshot({
+    path: "test-artifacts/rankings-mobile.png",
+    fullPage: true,
+  });
+  await page.locator(".ranking-main-table .ant-table-content").evaluate((e) => {
+    e.scrollLeft = 450;
+  });
+  assert.ok(
+    (await page
+      .locator(".ranking-main-table .ant-table-content")
+      .evaluate((e) => e.scrollLeft)) > 0,
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 812, height: 375 });
+  await overflow();
+  await tab("模型对比");
+  await overflow();
+  await page.goBack();
+  await page
+    .getByRole("tab", { name: "融合排行榜", exact: true })
+    .getAttribute("aria-selected")
+    .then((v) => assert.equal(v, "true"));
+  assert.deepEqual(errors, []);
+  console.log(
+    JSON.stringify(
+      {
+        passed: true,
+        pages: 6,
+        checks: [
+          "overview",
+          "three-source rankings",
+          "native full configurations",
+          "native export",
+          "fusion export metadata",
+          "search",
+          "row selection",
+          "comparison persistence",
+          "raw cost and suites",
+          "livebench suite columns",
+          "scope difference panel",
+          "budget filter",
+          "share link copy and restore",
+          "share defaults override local prefs",
+          "shared weights",
+          "375px pages",
+          "landscape",
+          "reduced motion",
+        ],
+        errors,
+      },
+      null,
+      2,
+    ),
+  );
+} catch (e) {
+  await page.screenshot({
+    path: "test-artifacts/portal-failure.png",
+    fullPage: true,
+  });
+  throw e;
+} finally {
+  await browser.close();
+}

@@ -1,7 +1,84 @@
-import test from 'node:test';import assert from 'node:assert/strict';
-import {parseAA,parseVals,parseLivebench,lbMetadata} from '../server/adapters.mjs';
-test('AA Flight parsing retains full precision, cost, effort and openness',()=>{const data=["$","div",null,{models:[{slug:'new',name:'New 99 (max)',shortName:'New 99 (max)',isOpenWeights:true,intelligenceIndex:12.345,intelligenceIndexCostPerTask:.002,modelCreatorName:'New'}]}];const chunk='35:'+JSON.stringify(data)+'\n';const html='<script>self.__next_f.push('+JSON.stringify([1,chunk])+')</script>';const r=parseAA(html).rows[0];assert.equal(r.score,12.345);assert.equal(r.costTask,.002);assert.equal(r.openWeights,true)});
-test('Vals model row uses th rather than td and keeps cost separate from token pricing',()=>{const r=parseVals('<p>Updated 10/13/2026</p><table><thead><tr><th>Cost / Test</th></tr></thead><tbody><tr><td>1</td><th scope="row">New 99</th><td>61.15%</td><td>$3.24</td><td>$2 / $10</td><td>4B / 2M</td><td>12m</td></tr></tbody></table>');assert.equal(r.rows[0].name,'New 99');assert.equal(r.rows[0].score,61.15);assert.equal(r.rows[0].costTask,3.24);assert.equal(r.rows[0].priceOutput,10)});
-test('LiveBench correctly distinguishes cost per task from successful-task cost',()=>{const js='const meta={"new-99":{url:"https://example.com",organization:"New",displayName:"New 99",effort:"max",openweight:!0}}';const r=parseLivebench('model,coding,reasoning\nnew-99,50,100\n','model,coding,nq_coding,reasoning,nq_reasoning,input_price_per_million,output_price_per_million\nnew-99,20,10,10,20,1,2\n',js).rows[0];assert.equal(r.score,75);assert.equal(r.costTask,1);assert.equal(r.costSuccess,1/.75);assert.equal(r.openWeights,true);assert.equal(r.name,'New 99')});
-test('parser structure drift fails clearly instead of returning invented data',()=>{assert.throws(()=>parseAA('<h1>challenge</h1>'),/结构变化/);assert.throws(()=>parseVals('<h1>new</h1>'),/结构变化/)});
-test('AA Flight missing-value sentinels become null instead of invalid prices',()=>{const data={models:[{name:'Missing costs',isOpenWeights:true,intelligenceIndex:10,intelligenceIndexCostPerTask:'$undefined',price1mInputTokens:'$undefined',price1mOutputTokens:'$undefined'}]};const html='<script>self.__next_f.push('+JSON.stringify([1,'1:'+JSON.stringify(data)+'\n'])+')</script>';const r=parseAA(html).rows[0];assert.equal(r.costTask,null);assert.equal(r.priceInput,null);assert.equal(r.priceOutput,null);});
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  parseAA,
+  parseVals,
+  parseLivebench,
+  lbMetadata,
+} from "../server/adapters.mjs";
+test("AA Flight parsing retains full precision, cost, effort and openness", () => {
+  const data = [
+    "$",
+    "div",
+    null,
+    {
+      models: [
+        {
+          slug: "new",
+          name: "New 99 (max)",
+          shortName: "New 99 (max)",
+          isOpenWeights: true,
+          intelligenceIndex: 12.345,
+          intelligenceIndexCostPerTask: 0.002,
+          modelCreatorName: "New",
+        },
+      ],
+    },
+  ];
+  const chunk = "35:" + JSON.stringify(data) + "\n";
+  const html =
+    "<script>self.__next_f.push(" + JSON.stringify([1, chunk]) + ")</script>";
+  const r = parseAA(html).rows[0];
+  assert.equal(r.score, 12.345);
+  assert.equal(r.costTask, 0.002);
+  assert.equal(r.openWeights, true);
+});
+test("Vals model row uses th rather than td and keeps cost separate from token pricing", () => {
+  const r = parseVals(
+    '<p>Updated 10/13/2026</p><table><thead><tr><th>Cost / Test</th></tr></thead><tbody><tr><td>1</td><th scope="row">New 99</th><td>61.15%</td><td>$3.24</td><td>$2 / $10</td><td>4B / 2M</td><td>12m</td></tr></tbody></table>',
+  );
+  assert.equal(r.rows[0].name, "New 99");
+  assert.equal(r.rows[0].score, 61.15);
+  assert.equal(r.rows[0].costTask, 3.24);
+  assert.equal(r.rows[0].priceOutput, 10);
+});
+test("LiveBench correctly distinguishes cost per task from successful-task cost", () => {
+  const js =
+    'const meta={"new-99":{url:"https://example.com",organization:"New",displayName:"New 99",effort:"max",openweight:!0}}';
+  const r = parseLivebench(
+    "model,coding,reasoning\nnew-99,50,100\n",
+    "model,coding,nq_coding,reasoning,nq_reasoning,input_price_per_million,output_price_per_million\nnew-99,20,10,10,20,1,2\n",
+    js,
+  ).rows[0];
+  assert.equal(r.score, 75);
+  assert.equal(r.costTask, 1);
+  assert.equal(r.costSuccess, 1 / 0.75);
+  assert.equal(r.openWeights, true);
+  assert.equal(r.name, "New 99");
+});
+test("parser structure drift fails clearly instead of returning invented data", () => {
+  assert.throws(() => parseAA("<h1>challenge</h1>"), /结构变化/);
+  assert.throws(() => parseVals("<h1>new</h1>"), /结构变化/);
+});
+test("AA Flight missing-value sentinels become null instead of invalid prices", () => {
+  const data = {
+    models: [
+      {
+        name: "Missing costs",
+        isOpenWeights: true,
+        intelligenceIndex: 10,
+        intelligenceIndexCostPerTask: "$undefined",
+        price1mInputTokens: "$undefined",
+        price1mOutputTokens: "$undefined",
+      },
+    ],
+  };
+  const html =
+    "<script>self.__next_f.push(" +
+    JSON.stringify([1, "1:" + JSON.stringify(data) + "\n"]) +
+    ")</script>";
+  const r = parseAA(html).rows[0];
+  assert.equal(r.costTask, null);
+  assert.equal(r.priceInput, null);
+  assert.equal(r.priceOutput, null);
+});

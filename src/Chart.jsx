@@ -1,71 +1,463 @@
-import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {Button,Tooltip} from 'antd';
-import {AimOutlined,DownloadOutlined,DragOutlined,ExpandOutlined,FullscreenExitOutlined,InfoCircleOutlined,ZoomInOutlined,ZoomOutOutlined} from '@ant-design/icons';
-import * as echarts from 'echarts/core';
-import {ScatterChart,LineChart} from 'echarts/charts';
-import {DataZoomComponent,GridComponent,LegendComponent,TooltipComponent,AriaComponent,MarkLineComponent,MarkAreaComponent} from 'echarts/components';
-import {CanvasRenderer} from 'echarts/renderers';
-import {costFormat,money,NAMES} from './presentation.mjs';
-import {dominatedAnchor} from './analysis.mjs';
-echarts.use([ScatterChart,LineChart,DataZoomComponent,GridComponent,LegendComponent,TooltipComponent,AriaComponent,MarkLineComponent,MarkAreaComponent,CanvasRenderer]);
-const LEGEND=[['开放权重','open'],['闭源 / 未确认','closed'],['全球前沿','global'],['开放权重前沿','frontier']];
-export default function Chart({rows,focus,onSelect,chartRef,costSource,costProfile}){
- const element=useRef(),container=useRef(),callback=useRef(onSelect);callback.current=onSelect;
- const [expanded,setExpanded]=useState(false),[visibility,setVisibility]=useState({}),[zoomed,setZoomed]=useState(false);
- useEffect(()=>{
-  const node=element.current;const chart=echarts.init(node);chartRef.current=chart;
-  // ECharts 6's shared RoamController consumes wheel events before per-zoom
-  // flags are checked. Keep native document scrolling by intercepting only
-  // propagation at this chart boundary, without ever preventing default.
-  const nativeScroll=e=>e.stopPropagation();node.addEventListener('wheel',nativeScroll,{capture:true,passive:true});
-  chart.on('click',p=>{if(p.data?.id)callback.current(p.data.id)});
-  chart.on('datazoom',()=>{const z=chart.getOption().dataZoom?.[0];setZoomed(z?.start>0||z?.end<100);});
-  const observer=new ResizeObserver(()=>chart.resize());observer.observe(element.current);
-  const fullscreen=()=>setExpanded(document.fullscreenElement===container.current);document.addEventListener('fullscreenchange',fullscreen);
-  return()=>{node.removeEventListener('wheel',nativeScroll,true);observer.disconnect();document.removeEventListener('fullscreenchange',fullscreen);chart.dispose();chartRef.current=null;};
- },[chartRef]);
- useEffect(()=>{
-  const chart=chartRef.current;if(!chart)return;
-  const plot=rows.filter(r=>r.plottable),isRelative=costSource==='composite';
-  const areaAnchor=dominatedAnchor(plot),axisMax=plot.length?Math.max(...plot.map(r=>r.cost))*1.40:100;
-  const point=r=>({id:r.id,name:r.name,value:[r.cost,r.composite],row:r,
-   label:{show:r.frontier||r.openFrontier,formatter:r.name,position:'top',distance:10,fontSize:11,fontWeight:500,color:r.openWeights===true?'#0b7565':'#526987',backgroundColor:'rgba(255,255,255,.94)',borderColor:r.openWeights===true?'#d8ebe6':'#e4e9ef',borderWidth:1,borderRadius:5,padding:[4,7]},
-   itemStyle:{borderColor:'#fff',borderWidth:2,shadowBlur:r.openFrontier?9:0,shadowColor:'rgba(14,120,102,.15)'}});
-  const open=plot.filter(r=>r.openWeights===true),closed=plot.filter(r=>r.openWeights!==true);
-  const line=(name,filter,color,dashed)=>({name,type:'line',data:plot.filter(filter).sort((a,b)=>a.cost-b.cost).map(r=>({...point(r),label:{show:false}})),symbol:'none',lineStyle:{color,width:dashed?1.8:2.5,type:dashed?'dashed':'solid'},itemStyle:{color},tooltip:{show:false},z:2,silent:true});
-  const esc=echarts.format.encodeHTML;
-  const previous=chart.getOption()?.dataZoom?.[0];
-  chart.setOption({animation:!matchMedia('(prefers-reduced-motion: reduce)').matches,animationDuration:250,backgroundColor:'#fff',textStyle:{fontFamily:'Inter, -apple-system, PingFang SC, sans-serif'},aria:{enabled:true,description:'模型成本与综合能力散点图，左上方代表更低成本与更高能力。下方表格提供相同数据。'},grid:{left:55,right:35,top:44,bottom:78},
-   tooltip:{trigger:'item',confine:true,borderWidth:0,padding:0,backgroundColor:'#fff',className:'frontier-tooltip',extraCssText:'box-shadow:0 10px 40px rgba(31,52,67,.16);border-radius:12px;overflow:hidden;max-width:340px;',formatter:p=>{
-    const r=p.data?.row;if(!r)return '';
-    const dollars=['aa','vals','livebench'].map(s=>`<div class="tip-cost-row"><span>${esc(NAMES[s])}</span><b>${money(r.representatives[s]?.costTask)}</b></div>`).join('');
-    return `<div class="tip-head"><div class="tip-eyebrow">${r.openWeights===true?'开放权重':'闭源 / 开放状态未确认'}</div><strong>${esc(r.name)}</strong><span>${esc(r.creator)}</span></div><div class="tip-metrics"><div><small>综合能力</small><b>${r.composite.toFixed(1)}<em> / 100</em></b></div><div><small>${isRelative?'相对基准成本':'每次任务成本'}</small><b>${costFormat(r.cost,costSource)}</b></div></div><div class="tip-dollar"><div class="tip-section-label">三站真实任务成本 · USD</div>${dollars}</div><div class="tip-foot"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong>${r.frontier?'全球前沿':r.openFrontier?'开放权重前沿':'非前沿'}</strong><small>点击模型查看配置与原始数据</small></div>`;
-   }},legend:{show:false,data:LEGEND.map(([name])=>name),selected:visibility},
-   xAxis:{type:'log',name:isRelative?'相对成本（基准 1 倍）':'每次任务成本（USD）',nameLocation:'middle',nameGap:29,nameTextStyle:{color:'#657b8b',fontSize:11},axisLabel:{formatter:v=>isRelative?`${Number((v/100).toPrecision(2))} 倍`:`$${Number(v.toPrecision(2))}`,color:'#81929f',fontSize:10,hideOverlap:true},splitLine:{lineStyle:{color:'#edf1f5',type:'dashed'}},minorTick:{show:false},axisTick:{show:false},axisLine:{lineStyle:{color:'#dce5eb'}},min:plot.length?Math.min(...plot.map(r=>r.cost))*.60:.01,max:axisMax,
-   },
-   yAxis:{type:'value',min:0,max:100,name:'综合能力分数',nameTextStyle:{color:'#657b8b',fontSize:11,padding:[0,0,7,0]},interval:20,axisLabel:{color:'#81929f',fontSize:10},splitLine:{lineStyle:{color:'#edf1f5'}},axisLine:{show:false},axisTick:{show:false}},
-   dataZoom:[{type:'inside',xAxisIndex:0,filterMode:'none',zoomOnMouseWheel:false,moveOnMouseWheel:false,moveOnMouseMove:true,preventDefaultMouseMove:true,start:previous?.start??0,end:previous?.end??100},{type:'slider',xAxisIndex:0,bottom:3,height:19,filterMode:'none',borderColor:'transparent',backgroundColor:'#f3f6f8',dataBackground:{lineStyle:{color:'#cbdad8'},areaStyle:{color:'#e1ece9'}},fillerColor:'rgba(14,120,102,.07)',handleSize:'90%',handleStyle:{color:'#fff',borderColor:'#74aa9c',shadowBlur:2,shadowColor:'#c1d7d0'},moveHandleSize:0,showDetail:false,brushSelect:false}],
-   series:[(()=>{const globalLine=line('全球前沿',r=>r.frontier,'#8398ad',true);
-    // 被支配区：最便宜的前沿模型支配其右下方整个矩形（成本更高且综合分更低），随「全球前沿」图例一起显隐。
-    if(areaAnchor)globalLine.markArea={silent:true,itemStyle:{color:'rgba(224,101,79,.07)'},
-     label:{show:true,position:'insideBottomRight',distance:10,color:'#b0584a',fontSize:10,formatter:`被支配区 · ${areaAnchor.name}`},
-     data:[[{xAxis:areaAnchor.cost,yAxis:0},{xAxis:axisMax,yAxis:areaAnchor.composite}]]};
-    return globalLine;})(),line('开放权重前沿',r=>r.openFrontier,'#128574',false),{name:'闭源 / 未确认',type:'scatter',data:closed.map(point),symbolSize:10,itemStyle:{color:'#a4b6c6',opacity:focus==='openFirst'?.55:.8},labelLayout:{hideOverlap:true,moveOverlap:'shiftY'},emphasis:{scale:1.5,itemStyle:{opacity:1,color:'#627e9a'}},z:3},{name:'开放权重',type:'scatter',data:open.map(point),symbol:'diamond',symbolSize:13,itemStyle:{color:'#128574',opacity:.94},labelLayout:{hideOverlap:true,moveOverlap:'shiftY'},emphasis:{scale:1.5,itemStyle:{color:'#065f50'}},z:4}]},true);
- },[rows,focus,chartRef,costSource,visibility]);
- const reset=()=>chartRef.current?.dispatchAction({type:'dataZoom',start:0,end:100});
- const zoom=direction=>{const z=chartRef.current?.getOption().dataZoom?.[0];if(!z)return;const middle=(z.start+z.end)/2;const range=Math.min(100,Math.max(2,(z.end-z.start)*(direction==='in'?.70:1.4)));chartRef.current.dispatchAction({type:'dataZoom',start:Math.max(0,middle-range/2),end:Math.min(100,middle+range/2)});};
- const save=()=>{const chart=chartRef.current;if(!chart)return;const a=document.createElement('a');a.download='model-frontier.png';a.href=chart.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#fff'});a.click();};
- const fullscreen=async()=>{if(document.fullscreenElement)await document.exitFullscreen();else await container.current?.requestFullscreen?.();};
- return <div ref={container} className="chart-stage">
-  <div className="chart-toolbar"><div className="chart-legend">{LEGEND.map(([name,kind])=><button key={name} className={visibility[name]===false?'inactive':''} aria-pressed={visibility[name]!==false} onClick={()=>setVisibility(v=>({...v,[name]:v[name]===false}))}><span className={'legend-marker '+kind} aria-hidden="true"/>{name}</button>)}</div><div className="chart-actions">
-   <Tooltip title="放大横轴"><Button aria-label="放大图表" type="text" icon={<ZoomInOutlined aria-hidden="true"/>} onClick={()=>zoom('in')}/></Tooltip>
-   <Tooltip title="缩小横轴"><Button aria-label="缩小图表" type="text" icon={<ZoomOutOutlined aria-hidden="true"/>} onClick={()=>zoom('out')}/></Tooltip>
-   <Tooltip title="重置缩放"><Button aria-label="重置图表" type="text" disabled={!zoomed} icon={<AimOutlined aria-hidden="true"/>} onClick={reset}/></Tooltip>
-   <Tooltip title={expanded?'退出全屏':'全屏查看'}><Button aria-label="切换图表全屏" type="text" icon={expanded?<FullscreenExitOutlined aria-hidden="true"/>:<ExpandOutlined aria-hidden="true"/>} onClick={fullscreen}/></Tooltip>
-   <Tooltip title="下载图表 PNG"><Button aria-label="下载图表" type="text" icon={<DownloadOutlined aria-hidden="true"/>} onClick={save}/></Tooltip>
-  </div></div>
-  <div className="plot-frame"><div ref={element} className="chart" role="img" aria-label="综合能力与任务成本交互图"/></div>
-  {costSource==='composite'&&<div className="cost-reference"><div className="reference-label"><InfoCircleOutlined aria-hidden="true"/><span>1 倍成本基准<small>{costProfile?.sources?.length??3} 源共同样本中位数</small></span></div>{['aa','vals','livebench'].map(source=><div key={source}><span>{NAMES[source]}</span><strong>{money(costProfile?.medians[source])}<small> / 任务</small></strong></div>)}</div>}
-  <div className="chart-interaction-note"><DragOutlined aria-hidden="true"/><span>左上方更优。阴影区域内的模型都被标注的前沿模型同时以更低成本、更高综合分支配；拖动平移，按钮或滑块缩放，滚轮用于页面滚动</span></div>
- </div>;
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Tooltip } from "antd";
+import {
+  AimOutlined,
+  DownloadOutlined,
+  DragOutlined,
+  ExpandOutlined,
+  FullscreenExitOutlined,
+  InfoCircleOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
+} from "@ant-design/icons";
+import * as echarts from "echarts/core";
+import { ScatterChart, LineChart } from "echarts/charts";
+import {
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  AriaComponent,
+  MarkLineComponent,
+  MarkAreaComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+import { costFormat, money, NAMES } from "./presentation.mjs";
+import { dominatedAnchor } from "./analysis.mjs";
+echarts.use([
+  ScatterChart,
+  LineChart,
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  AriaComponent,
+  MarkLineComponent,
+  MarkAreaComponent,
+  CanvasRenderer,
+]);
+const LEGEND = [
+  ["开放权重", "open"],
+  ["闭源 / 未确认", "closed"],
+  ["全球前沿", "global"],
+  ["开放权重前沿", "frontier"],
+];
+export default function Chart({
+  rows,
+  focus,
+  onSelect,
+  chartRef,
+  costSource,
+  costProfile,
+}) {
+  const element = useRef(),
+    container = useRef(),
+    callback = useRef(onSelect);
+  callback.current = onSelect;
+  const [expanded, setExpanded] = useState(false),
+    [visibility, setVisibility] = useState({}),
+    [zoomed, setZoomed] = useState(false);
+  useEffect(() => {
+    const node = element.current;
+    const chart = echarts.init(node);
+    chartRef.current = chart;
+    // ECharts 6's shared RoamController consumes wheel events before per-zoom
+    // flags are checked. Keep native document scrolling by intercepting only
+    // propagation at this chart boundary, without ever preventing default.
+    const nativeScroll = (e) => e.stopPropagation();
+    node.addEventListener("wheel", nativeScroll, {
+      capture: true,
+      passive: true,
+    });
+    chart.on("click", (p) => {
+      if (p.data?.id) callback.current(p.data.id);
+    });
+    chart.on("datazoom", () => {
+      const z = chart.getOption().dataZoom?.[0];
+      setZoomed(z?.start > 0 || z?.end < 100);
+    });
+    const observer = new ResizeObserver(() => chart.resize());
+    observer.observe(element.current);
+    const fullscreen = () =>
+      setExpanded(document.fullscreenElement === container.current);
+    document.addEventListener("fullscreenchange", fullscreen);
+    return () => {
+      node.removeEventListener("wheel", nativeScroll, true);
+      observer.disconnect();
+      document.removeEventListener("fullscreenchange", fullscreen);
+      chart.dispose();
+      chartRef.current = null;
+    };
+  }, [chartRef]);
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const plot = rows.filter((r) => r.plottable),
+      isRelative = costSource === "composite";
+    const areaAnchor = dominatedAnchor(plot),
+      axisMax = plot.length ? Math.max(...plot.map((r) => r.cost)) * 1.4 : 100;
+    const point = (r) => ({
+      id: r.id,
+      name: r.name,
+      value: [r.cost, r.composite],
+      row: r,
+      label: {
+        show: r.frontier || r.openFrontier,
+        formatter: r.name,
+        position: "top",
+        distance: 10,
+        fontSize: 11,
+        fontWeight: 500,
+        color: r.openWeights === true ? "#0b7565" : "#526987",
+        backgroundColor: "rgba(255,255,255,.94)",
+        borderColor: r.openWeights === true ? "#d8ebe6" : "#e4e9ef",
+        borderWidth: 1,
+        borderRadius: 5,
+        padding: [4, 7],
+      },
+      itemStyle: {
+        borderColor: "#fff",
+        borderWidth: 2,
+        shadowBlur: r.openFrontier ? 9 : 0,
+        shadowColor: "rgba(14,120,102,.15)",
+      },
+    });
+    const open = plot.filter((r) => r.openWeights === true),
+      closed = plot.filter((r) => r.openWeights !== true);
+    const line = (name, filter, color, dashed) => ({
+      name,
+      type: "line",
+      data: plot
+        .filter(filter)
+        .sort((a, b) => a.cost - b.cost)
+        .map((r) => ({ ...point(r), label: { show: false } })),
+      symbol: "none",
+      lineStyle: {
+        color,
+        width: dashed ? 1.8 : 2.5,
+        type: dashed ? "dashed" : "solid",
+      },
+      itemStyle: { color },
+      tooltip: { show: false },
+      z: 2,
+      silent: true,
+    });
+    const esc = echarts.format.encodeHTML;
+    const previous = chart.getOption()?.dataZoom?.[0];
+    chart.setOption(
+      {
+        animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
+        animationDuration: 250,
+        backgroundColor: "#fff",
+        textStyle: {
+          fontFamily: "Inter, -apple-system, PingFang SC, sans-serif",
+        },
+        aria: {
+          enabled: true,
+          description:
+            "模型成本与综合能力散点图，左上方代表更低成本与更高能力。下方表格提供相同数据。",
+        },
+        grid: { left: 55, right: 35, top: 44, bottom: 78 },
+        tooltip: {
+          trigger: "item",
+          confine: true,
+          borderWidth: 0,
+          padding: 0,
+          backgroundColor: "#fff",
+          className: "frontier-tooltip",
+          extraCssText:
+            "box-shadow:0 10px 40px rgba(31,52,67,.16);border-radius:12px;overflow:hidden;max-width:340px;",
+          formatter: (p) => {
+            const r = p.data?.row;
+            if (!r) return "";
+            const dollars = ["aa", "vals", "livebench"]
+              .map(
+                (s) =>
+                  `<div class="tip-cost-row"><span>${esc(NAMES[s])}</span><b>${money(r.representatives[s]?.costTask)}</b></div>`,
+              )
+              .join("");
+            return `<div class="tip-head"><div class="tip-eyebrow">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong>${esc(r.name)}</strong><span>${esc(r.creator)}</span></div><div class="tip-metrics"><div><small>综合能力</small><b>${r.composite.toFixed(1)}<em> / 100</em></b></div><div><small>${isRelative ? "相对基准成本" : "每次任务成本"}</small><b>${costFormat(r.cost, costSource)}</b></div></div><div class="tip-dollar"><div class="tip-section-label">三站真实任务成本 · USD</div>${dollars}</div><div class="tip-foot"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong>${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small>点击模型查看配置与原始数据</small></div>`;
+          },
+        },
+        legend: {
+          show: false,
+          data: LEGEND.map(([name]) => name),
+          selected: visibility,
+        },
+        xAxis: {
+          type: "log",
+          name: isRelative ? "相对成本（基准 1 倍）" : "每次任务成本（USD）",
+          nameLocation: "middle",
+          nameGap: 29,
+          nameTextStyle: { color: "#657b8b", fontSize: 11 },
+          axisLabel: {
+            formatter: (v) =>
+              isRelative
+                ? `${Number((v / 100).toPrecision(2))} 倍`
+                : `$${Number(v.toPrecision(2))}`,
+            color: "#81929f",
+            fontSize: 10,
+            hideOverlap: true,
+          },
+          splitLine: { lineStyle: { color: "#edf1f5", type: "dashed" } },
+          minorTick: { show: false },
+          axisTick: { show: false },
+          axisLine: { lineStyle: { color: "#dce5eb" } },
+          min: plot.length ? Math.min(...plot.map((r) => r.cost)) * 0.6 : 0.01,
+          max: axisMax,
+        },
+        yAxis: {
+          type: "value",
+          min: 0,
+          max: 100,
+          name: "综合能力分数",
+          nameTextStyle: {
+            color: "#657b8b",
+            fontSize: 11,
+            padding: [0, 0, 7, 0],
+          },
+          interval: 20,
+          axisLabel: { color: "#81929f", fontSize: 10 },
+          splitLine: { lineStyle: { color: "#edf1f5" } },
+          axisLine: { show: false },
+          axisTick: { show: false },
+        },
+        dataZoom: [
+          {
+            type: "inside",
+            xAxisIndex: 0,
+            filterMode: "none",
+            zoomOnMouseWheel: false,
+            moveOnMouseWheel: false,
+            moveOnMouseMove: true,
+            preventDefaultMouseMove: true,
+            start: previous?.start ?? 0,
+            end: previous?.end ?? 100,
+          },
+          {
+            type: "slider",
+            xAxisIndex: 0,
+            bottom: 3,
+            height: 19,
+            filterMode: "none",
+            borderColor: "transparent",
+            backgroundColor: "#f3f6f8",
+            dataBackground: {
+              lineStyle: { color: "#cbdad8" },
+              areaStyle: { color: "#e1ece9" },
+            },
+            fillerColor: "rgba(14,120,102,.07)",
+            handleSize: "90%",
+            handleStyle: {
+              color: "#fff",
+              borderColor: "#74aa9c",
+              shadowBlur: 2,
+              shadowColor: "#c1d7d0",
+            },
+            moveHandleSize: 0,
+            showDetail: false,
+            brushSelect: false,
+          },
+        ],
+        series: [
+          (() => {
+            const globalLine = line(
+              "全球前沿",
+              (r) => r.frontier,
+              "#8398ad",
+              true,
+            );
+            // 被支配区：最便宜的前沿模型支配其右下方整个矩形（成本更高且综合分更低），随「全球前沿」图例一起显隐。
+            if (areaAnchor)
+              globalLine.markArea = {
+                silent: true,
+                itemStyle: { color: "rgba(224,101,79,.07)" },
+                label: {
+                  show: true,
+                  position: "insideBottomRight",
+                  distance: 10,
+                  color: "#b0584a",
+                  fontSize: 10,
+                  formatter: `被支配区 · ${areaAnchor.name}`,
+                },
+                data: [
+                  [
+                    { xAxis: areaAnchor.cost, yAxis: 0 },
+                    { xAxis: axisMax, yAxis: areaAnchor.composite },
+                  ],
+                ],
+              };
+            return globalLine;
+          })(),
+          line("开放权重前沿", (r) => r.openFrontier, "#128574", false),
+          {
+            name: "闭源 / 未确认",
+            type: "scatter",
+            data: closed.map(point),
+            symbolSize: 10,
+            itemStyle: {
+              color: "#a4b6c6",
+              opacity: focus === "openFirst" ? 0.55 : 0.8,
+            },
+            labelLayout: { hideOverlap: true, moveOverlap: "shiftY" },
+            emphasis: {
+              scale: 1.5,
+              itemStyle: { opacity: 1, color: "#627e9a" },
+            },
+            z: 3,
+          },
+          {
+            name: "开放权重",
+            type: "scatter",
+            data: open.map(point),
+            symbol: "diamond",
+            symbolSize: 13,
+            itemStyle: { color: "#128574", opacity: 0.94 },
+            labelLayout: { hideOverlap: true, moveOverlap: "shiftY" },
+            emphasis: { scale: 1.5, itemStyle: { color: "#065f50" } },
+            z: 4,
+          },
+        ],
+      },
+      true,
+    );
+  }, [rows, focus, chartRef, costSource, visibility]);
+  const reset = () =>
+    chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
+  const zoom = (direction) => {
+    const z = chartRef.current?.getOption().dataZoom?.[0];
+    if (!z) return;
+    const middle = (z.start + z.end) / 2;
+    const range = Math.min(
+      100,
+      Math.max(2, (z.end - z.start) * (direction === "in" ? 0.7 : 1.4)),
+    );
+    chartRef.current.dispatchAction({
+      type: "dataZoom",
+      start: Math.max(0, middle - range / 2),
+      end: Math.min(100, middle + range / 2),
+    });
+  };
+  const save = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const a = document.createElement("a");
+    a.download = "model-frontier.png";
+    a.href = chart.getDataURL({
+      type: "png",
+      pixelRatio: 2,
+      backgroundColor: "#fff",
+    });
+    a.click();
+  };
+  const fullscreen = async () => {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await container.current?.requestFullscreen?.();
+  };
+  return (
+    <div ref={container} className="chart-stage">
+      <div className="chart-toolbar">
+        <div className="chart-legend">
+          {LEGEND.map(([name, kind]) => (
+            <button
+              key={name}
+              className={visibility[name] === false ? "inactive" : ""}
+              aria-pressed={visibility[name] !== false}
+              onClick={() =>
+                setVisibility((v) => ({ ...v, [name]: v[name] === false }))
+              }
+            >
+              <span className={"legend-marker " + kind} aria-hidden="true" />
+              {name}
+            </button>
+          ))}
+        </div>
+        <div className="chart-actions">
+          <Tooltip title="放大横轴">
+            <Button
+              aria-label="放大图表"
+              type="text"
+              icon={<ZoomInOutlined aria-hidden="true" />}
+              onClick={() => zoom("in")}
+            />
+          </Tooltip>
+          <Tooltip title="缩小横轴">
+            <Button
+              aria-label="缩小图表"
+              type="text"
+              icon={<ZoomOutOutlined aria-hidden="true" />}
+              onClick={() => zoom("out")}
+            />
+          </Tooltip>
+          <Tooltip title="重置缩放">
+            <Button
+              aria-label="重置图表"
+              type="text"
+              disabled={!zoomed}
+              icon={<AimOutlined aria-hidden="true" />}
+              onClick={reset}
+            />
+          </Tooltip>
+          <Tooltip title={expanded ? "退出全屏" : "全屏查看"}>
+            <Button
+              aria-label="切换图表全屏"
+              type="text"
+              icon={
+                expanded ? (
+                  <FullscreenExitOutlined aria-hidden="true" />
+                ) : (
+                  <ExpandOutlined aria-hidden="true" />
+                )
+              }
+              onClick={fullscreen}
+            />
+          </Tooltip>
+          <Tooltip title="下载图表 PNG">
+            <Button
+              aria-label="下载图表"
+              type="text"
+              icon={<DownloadOutlined aria-hidden="true" />}
+              onClick={save}
+            />
+          </Tooltip>
+        </div>
+      </div>
+      <div className="plot-frame">
+        <div
+          ref={element}
+          className="chart"
+          role="img"
+          aria-label="综合能力与任务成本交互图"
+        />
+      </div>
+      {costSource === "composite" && (
+        <div className="cost-reference">
+          <div className="reference-label">
+            <InfoCircleOutlined aria-hidden="true" />
+            <span>
+              1 倍成本基准
+              <small>
+                {costProfile?.sources?.length ?? 3} 源共同样本中位数
+              </small>
+            </span>
+          </div>
+          {["aa", "vals", "livebench"].map((source) => (
+            <div key={source}>
+              <span>{NAMES[source]}</span>
+              <strong>
+                {money(costProfile?.medians[source])}
+                <small> / 任务</small>
+              </strong>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="chart-interaction-note">
+        <DragOutlined aria-hidden="true" />
+        <span>
+          左上方更优。阴影区域内的模型都被标注的前沿模型同时以更低成本、更高综合分支配；拖动平移，按钮或滑块缩放，滚轮用于页面滚动
+        </span>
+      </div>
+    </div>
+  );
 }

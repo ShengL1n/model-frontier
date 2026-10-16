@@ -1,2 +1,30 @@
-import {defineConfig} from 'vite';
-export default defineConfig({build:{rolldownOptions:{onwarn(warning,defaultHandler){if(warning.code==='MODULE_LEVEL_DIRECTIVE'&&warning.message.includes('use client'))return;defaultHandler(warning);},output:{codeSplitting:{groups:[{name:'charts',test:/node_modules\/(echarts|zrender)\//},{name:'antd',test:/node_modules\/(antd|@ant-design|@rc-component|rc-)/},{name:'react',test:/node_modules\/(react|react-dom|scheduler)\//}]}}}}});
+import { defineConfig } from "vite";
+export default defineConfig({
+  build: {
+    rolldownOptions: {
+      onwarn(warning, defaultHandler) {
+        if (
+          warning.code === "MODULE_LEVEL_DIRECTIVE" &&
+          warning.message.includes("use client")
+        )
+          return;
+        defaultHandler(warning);
+      },
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "charts", test: /node_modules\/(echarts|zrender)\// },
+            {
+              name: "antd",
+              test: /node_modules\/(antd|@ant-design|@rc-component|rc-)/,
+            },
+            {
+              name: "react",
+              test: /node_modules\/(react|react-dom|scheduler)\//,
+            },
+          ],
+        },
+      },
+    },
+  },
+});
