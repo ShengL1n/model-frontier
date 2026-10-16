@@ -21,7 +21,7 @@ export function migratePreferences(saved = {}) {
     : saved.preset === "custom"
       ? "custom"
       : "capability";
-  let weights =
+  const weights =
     preset === "custom"
       ? Object.fromEntries(
           Object.keys(PRESETS.capability.weights).map((s) => [

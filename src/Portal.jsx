@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import {
   Alert,
   Button,
@@ -33,7 +33,6 @@ import {
   applyBudget,
   budgetSummary,
   livebenchSuiteKeys,
-  sanitizeSelection,
   SOURCE_IDS,
 } from "./portal.mjs";
 import CompareChart from "./CompareChart.jsx";
@@ -119,7 +118,7 @@ export function Overview({
         </Button>
       </div>
       {items.length ? (
-        items.slice(0, 5).map((r, i) => (
+        items.slice(0, 5).map((r) => (
           <div className="leader-row" key={r.id}>
             <span className={"rank-badge " + (r.rank === 1 ? "first" : "")}>
               {r.rank}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Tooltip } from "antd";
 import {
   AimOutlined,
@@ -53,7 +53,10 @@ export default function Chart({
   const element = useRef(),
     container = useRef(),
     callback = useRef(onSelect);
-  callback.current = onSelect;
+  // 图表事件闭包经 ref 取最新 onSelect；渲染期不写 ref，统一放到副作用阶段
+  useEffect(() => {
+    callback.current = onSelect;
+  });
   const [expanded, setExpanded] = useState(false),
     [visibility, setVisibility] = useState({}),
     [zoomed, setZoomed] = useState(false);

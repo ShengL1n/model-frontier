@@ -1,4 +1,4 @@
-import React, {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -46,7 +46,6 @@ import {
   DashboardOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
-  ArrowRightOutlined,
   LinkOutlined,
 } from "@ant-design/icons";
 import Chart from "./Chart.jsx";
@@ -269,6 +268,8 @@ function App() {
   }, [selection]);
   useEffect(() => {
     if (data?.models)
+      // 外部模型集合到达后收敛选中项；未变化时返回原引用避免多余渲染
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 数据到达后的派生修正，非渲染期写入
       setSelection((previous) => {
         const next = sanitizeSelection(previous, data.models);
         return next.length === previous.length &&
@@ -301,6 +302,8 @@ function App() {
     return d;
   }, []);
   useEffect(() => {
+    // 首次拉取与轮询共用 load；内部 setState 均发生在 await 之后
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 标准轮询取数模式
     load().catch((e) => setError(e.message));
     const id = setInterval(
       () => load().catch((e) => setError(e.message)),
@@ -348,6 +351,8 @@ function App() {
         excludeHistorical,
         excludeStale,
       }),
+    // qualityStamp 是各源 excluded 状态的指纹，与函数体唯一读取的字段精确对应
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 以质量戳代替 sources 对象身份
     [data?.models, excludeHistorical, excludeStale, qualityStamp],
   );
   const activeCostSources = useMemo(
@@ -355,6 +360,7 @@ function App() {
       Object.keys(NAMES).filter(
         (s) => !excludeStale || !sourceHealth(data?.sources?.[s]).excluded,
       ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 同上，qualityStamp 已覆盖 excluded 变化
     [excludeStale, qualityStamp],
   );
   const analysis = useMemo(
@@ -496,6 +502,7 @@ function App() {
       if (location.hash !== hash) history.replaceState(null, "", hash);
     }, 250);
     return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shareTarget 每次渲染重建，上方已逐一枚举其全部输入
   }, [
     tab,
     preset,

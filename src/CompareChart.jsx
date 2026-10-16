@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart } from "echarts/charts";
 import {
@@ -20,9 +20,11 @@ echarts.use([
 export default function CompareChart({ rows }) {
   const node = useRef(null);
   useEffect(() => {
-    const chart = echarts.init(node.current);
+    const el = node.current;
+    if (!el) return;
+    const chart = echarts.init(el);
     const observer = new ResizeObserver(() => chart.resize());
-    observer.observe(node.current);
+    observer.observe(el);
     chart.setOption({
       animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
       color: ["#0c806e", "#557daa", "#a57b40", "#8b6ab2"],
@@ -68,13 +70,13 @@ export default function CompareChart({ rows }) {
       })),
     });
     const wheel = (e) => e.stopPropagation();
-    node.current.addEventListener("wheel", wheel, {
+    el.addEventListener("wheel", wheel, {
       capture: true,
       passive: true,
     });
     return () => {
       observer.disconnect();
-      node.current?.removeEventListener("wheel", wheel, { capture: true });
+      el.removeEventListener("wheel", wheel, { capture: true });
       chart.dispose();
     };
   }, [rows]);

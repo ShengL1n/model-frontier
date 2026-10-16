@@ -1,11 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  parseAA,
-  parseVals,
-  parseLivebench,
-  lbMetadata,
-} from "../server/adapters.mjs";
+import { parseAA, parseVals, parseLivebench } from "../server/adapters.mjs";
 test("AA Flight parsing retains full precision, cost, effort and openness", () => {
   const data = [
     "$",

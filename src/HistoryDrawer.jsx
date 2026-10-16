@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Drawer, Empty, Input, Select, Spin, Table, Tag } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { NAMES, formatTime, money } from "./presentation.mjs";
@@ -45,12 +45,15 @@ export default function HistoryDrawer({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(null);
   // 仅在打开时重置：关闭瞬间清空内容会让抽屉在滑出动画中闪成空状态。
+  /* eslint-disable react-hooks/set-state-in-effect -- 打开瞬间重置是有意行为，见上注释 */
   useEffect(() => {
     if (!open) return;
     setRecordId(undefined);
     setQuery("");
     setData(null);
   }, [open, modelId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  /* eslint-disable react-hooks/set-state-in-effect -- 仅置忙是同步的，取数结果都在回调中落地 */
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
