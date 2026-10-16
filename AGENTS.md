@@ -1,0 +1,42 @@
+# AGENTS.md — AI 协作须知
+
+「模型前沿」是一个小型单页分析台：聚合 Artificial Analysis、Vals、LiveBench 三榜公开数据，做融合排名、模型对比与前沿探索。**定位是小工具，不追求长期演化，任何设计以简单优先。**
+
+## 硬约束
+
+- **Node 前后一体单服务，不分离、不换栈、不引入后端框架**（见 `docs/adr/0001`）。
+- 量化口径（名次百分位 + 算术平均、成本几何平均）维持现状，改动需先写 ADR（见 `docs/adr/0003`）。
+- 诚实性红线见 `CONSTITUTION.md`，违反的改动直接不做。
+
+## 常用命令
+
+```sh
+npm ci                # 安装依赖
+npm run dev           # 开发模式（127.0.0.1:4317）
+npm run build && npm start   # 生产模式（同一端口，二选一）
+npm test              # 76 个单元测试（node --test）
+npm run test:coverage # 单测 + 覆盖率门禁（行 92 / 分支 85 / 函数 90）
+npm run test:e2e && npm run test:portal && npm run test:evidence  # 三套 E2E（需服务已运行，本机 Chrome）
+npm run lint          # ESLint（--max-warnings 0）
+npm run lint:css      # Stylelint
+npm run format:check  # Prettier 检查
+```
+
+## 改动后的验证流程（缺一不可）
+
+1. `npm run test:coverage`（含门禁阈值）
+2. `npm run build`
+3. 重启 4317 服务（先 `lsof -ti :4317 -sTCP:LISTEN` 找到旧进程；注意 `kill` 需带 `-sTCP:LISTEN` 才能精确命中）
+4. 三套 E2E 全绿
+
+## 已知坑
+
+- **antd Drawer 竞态**：`HistoryDrawer` 只在打开瞬间重置内容，关闭时清空会让滑出动画闪成空状态。改这块前先读该文件注释。
+- **ECharts 滚轮**：图表边界用 capture 拦截 stopPropagation 且绝不 preventDefault，保页面原生滚动。
+- **exhaustive-deps 豁免**：`qualityStamp` 是 sources excluded 状态的指纹，代替整对象身份；`shareTarget` 的依赖列表逐一枚举其输入。动这些代码前先理解为何豁免。
+
+## 约定
+
+- 代码注释与技术文档一律简体中文；日志与报错信息面向用户可中文。
+- 禁止擅自 `git commit` / `git push`，完成后汇报等待指示。
+- 方向性决策（口径、架构、契约）先写 `docs/adr/`，规格变更走 `openspec/`（见 `openspec/AGENTS.md`）。
