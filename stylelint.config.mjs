@@ -1,6 +1,25 @@
 export default {
   extends: ["stylelint-config-standard"],
   rules: {
+    // Tailwind 的包导入必须保持字符串形式，url() 记法会让其解析器无法展开
+    "import-notation": "string",
+    // Tailwind v4 的编译指令
+    "at-rule-no-unknown": [
+      true,
+      {
+        ignoreAtRules: [
+          "theme",
+          "source",
+          "utility",
+          "variant",
+          "custom-variant",
+          "apply",
+          "reference",
+          "config",
+          "plugin",
+        ],
+      },
+    ],
     // 自定义属性名与 JS 常量保持一致，不做小写强制
     "custom-property-pattern": null,
     // 选择器嵌套深度等交给人工判断，关闭纯风格类限制

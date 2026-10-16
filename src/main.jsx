@@ -573,7 +573,10 @@ function App() {
         <button className="model-link" onClick={() => setSelected(r.id)}>
           <span
             className={
-              "model-type-icon " + (r.openWeights === true ? "open" : "")
+              "grid place-items-center w-[29px] h-[29px] shrink-0 rounded-[8px] border text-[14px] max-[760px]:w-[26px] max-[760px]:h-[26px] max-[760px]:rounded-[7px] max-[760px]:text-[12px] " +
+              (r.openWeights === true
+                ? "bg-[#edf6f1] text-[#4a9a80] border-[#e0eee5]"
+                : "bg-[#f0f3f6] text-[#9aabb6] border-[#e7edf1]")
             }
           >
             {r.openWeights === true ? (
@@ -586,7 +589,9 @@ function App() {
           </span>
           <span>
             {v}
-            <small>{r.creator}</small>
+            <small className="block text-[10px] font-normal text-[#98a5ae] mt-[2px] max-[760px]:text-[9px]">
+              {r.creator}
+            </small>
           </span>
         </button>
       ),
@@ -613,13 +618,15 @@ function App() {
       render: (v, r) =>
         v == null ? (
           <Tooltip title={r.reason}>
-            <span className="muted">未评分</span>
+            <span className="muted text-[11px] text-[#6b818f] leading-[1.85]">
+              未评分
+            </span>
           </Tooltip>
         ) : (
           <Tooltip
             title={`综合能力 ${r.composite.toFixed(2)}；有效覆盖 ${r.available.length} 榜，不额外加分`}
           >
-            <strong className="number">
+            <strong className="number text-[12px] tabular-nums whitespace-nowrap">
               {v.toFixed(1)}
               {!r.complete && (
                 <InfoCircleOutlined
@@ -637,23 +644,30 @@ function App() {
       width: 120,
       sorter: (a, b) => (a.cost ?? Infinity) - (b.cost ?? Infinity),
       render: (v, r) => (
-        <span className="number">
+        <span className="number text-[12px] tabular-nums whitespace-nowrap">
           {costFormat(v, costSource)}
           {costSource === "composite" && v != null && (
             <Tooltip
               title={
-                <div className="price-breakdown">
+                <div className="min-w-[190px] text-[11px]">
                   {["aa", "vals", "livebench"].map((source) => (
-                    <div key={source}>
+                    <div
+                      key={source}
+                      className="flex justify-between gap-[25px] py-[5px]"
+                    >
                       <span>{NAMES[source]}</span>
-                      <b>{money(r.representatives[source]?.costTask)}</b>
+                      <b className="font-medium">
+                        {money(r.representatives[source]?.costTask)}
+                      </b>
                     </div>
                   ))}
-                  <small>不同任务，分别计价</small>
+                  <small className="block text-[#adbbb7] text-[9px] mt-[7px]">
+                    不同任务，分别计价
+                  </small>
                 </div>
               }
             >
-              <small className="cost-coverage">
+              <small className="block text-[9px] text-[#98aaa3] font-normal mt-[4px] cursor-help">
                 {r.costCoverage}/3 价格来源{" "}
                 <InfoCircleOutlined aria-hidden="true" />
               </small>
@@ -666,7 +680,7 @@ function App() {
       title: "榜单覆盖",
       width: 140,
       render: (_, r) => (
-        <div className="coverage">
+        <div className="flex gap-[4px]">
           {Object.keys(NAMES).map((s) => (
             <Tooltip
               key={s}
@@ -674,7 +688,10 @@ function App() {
             >
               <span
                 className={
-                  Number.isFinite(r.representatives[s]?.score) ? "yes" : ""
+                  "py-[3px] px-[5px] text-[8px] font-medium rounded-[4px] border " +
+                  (Number.isFinite(r.representatives[s]?.score)
+                    ? "bg-[#edf6f1] text-[#66927f] border-[#dfebe4]"
+                    : "bg-[#f9fafb] text-[#c1cbd2] border-[#edf1f3]")
                 }
               >
                 {s === "livebench" ? "LB" : s.toUpperCase()}
@@ -698,17 +715,21 @@ function App() {
         ) : r.openFrontier ? (
           <Tag color="green">开放权重前沿</Tag>
         ) : (
-          <span className="muted">{r.reason ?? "非前沿"}</span>
+          <span className="muted text-[11px] text-[#6b818f] leading-[1.85]">
+            {r.reason ?? "非前沿"}
+          </span>
         ),
     },
   ];
   const controls = (
-    <aside className="panel controls">
-      <div className="panel-title">
+    <aside className="panel controls pt-[21px] px-[21px] pb-[19px] min-w-0 max-[1180px]:py-[20px] max-[1180px]:px-[18px] max-[760px]:w-full max-[760px]:p-[20px] max-[760px]:grid max-[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] max-[760px]:gap-y-[9px] max-[760px]:gap-x-[15px]">
+      <div className="panel-title flex items-center justify-between mb-[21px] text-[#8a9aa4] max-[760px]:col-span-full max-[760px]:mb-[7px]">
         <h2>比较口径</h2>
         <SettingOutlined aria-hidden="true" />
       </div>
-      <label>权重预设</label>
+      <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-[760px]:mt-[6px] max-[760px]:mb-0 max-[760px]:self-center max-[760px]:text-[10px]">
+        权重预设
+      </label>
       <Select
         virtual={false}
         aria-label="权重预设"
@@ -722,15 +743,20 @@ function App() {
           { value: "custom", label: "自定义权重", disabled: true },
         ]}
       />
-      <p className="control-help">
+      <p className="control-help text-[10px] leading-[1.85] text-[#8a9aa4] mt-0 mb-[17px] max-[760px]:col-span-full max-[760px]:mt-[2px] max-[760px]:mb-[10px] max-[760px]:text-[9px]">
         能力优先：AA 40%、Vals 35%、LiveBench 25%；可切换等权验证结论。
       </p>
-      <div className="weights">
+      <div className="weights max-[760px]:col-span-full max-[760px]:grid max-[760px]:grid-cols-2 max-[760px]:gap-y-[3px] max-[760px]:gap-x-[24px]">
         {Object.entries(NAMES).map(([key, name]) => (
           <div key={key}>
-            <div className="weight-label">
-              <label htmlFor={"weight-" + key}>{name}</label>
-              <span>
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor={"weight-" + key}
+                className="block text-[11px] text-[#4c6574] font-medium m-0 max-[760px]:text-[10px]"
+              >
+                {name}
+              </label>
+              <span className="text-[10px] font-[550] text-[#6c8c8a] tabular-nums bg-[#f0f7f4] py-[2px] px-[6px] rounded-[4px]">
                 {total ? Math.round((weights[key] / total) * 100) : 0}%
               </span>
             </div>
@@ -748,8 +774,10 @@ function App() {
           </div>
         ))}
       </div>
-      <div className="divider" />
-      <label>成本来源</label>
+      <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-[760px]:my-[6px] max-[760px]:col-span-full" />
+      <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-[760px]:mt-[6px] max-[760px]:mb-0 max-[760px]:self-center max-[760px]:text-[10px]">
+        成本来源
+      </label>
       <Select
         virtual={false}
         aria-label="成本来源"
@@ -761,13 +789,15 @@ function App() {
         }))}
       />
       {costSource === "composite" && (
-        <p className="control-help">
+        <p className="control-help text-[10px] leading-[1.85] text-[#8a9aa4] mt-0 mb-[17px] max-[760px]:col-span-full max-[760px]:mt-[2px] max-[760px]:mb-[10px] max-[760px]:text-[9px]">
           综合指数至少需 2 个成本来源；每个模型标明 2/3 或 3/3。
         </p>
       )}
-      <div className="divider" />
-      <label>任务预算筛选</label>
-      <div className="budget-line">
+      <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-[760px]:my-[6px] max-[760px]:col-span-full" />
+      <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-[760px]:mt-[6px] max-[760px]:mb-0 max-[760px]:self-center max-[760px]:text-[10px]">
+        任务预算筛选
+      </label>
+      <div className="budget-line flex gap-[8px] items-center max-[760px]:flex-col max-[760px]:items-stretch">
         <Select
           virtual={false}
           aria-label="预算成本来源"
@@ -794,10 +824,12 @@ function App() {
           onChange={(v) => setBudgetLimit(Number.isFinite(v) ? v : null)}
         />
       </div>
-      <p className="control-help">
+      <p className="control-help text-[10px] leading-[1.85] text-[#8a9aa4] mt-0 mb-[17px] max-[760px]:col-span-full max-[760px]:mt-[2px] max-[760px]:mb-[10px] max-[760px]:text-[9px]">
         按所选来源的真实美元任务成本隐藏超出预算的模型；未披露或不可核对该来源成本的模型一并隐藏。只改变显示，不改变分数与名次；综合相对成本不是美元预算。
       </p>
-      <label>最低榜单覆盖</label>
+      <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-[760px]:mt-[6px] max-[760px]:mb-0 max-[760px]:self-center max-[760px]:text-[10px]">
+        最低榜单覆盖
+      </label>
       <Select
         virtual={false}
         aria-label="最低榜单覆盖"
@@ -811,7 +843,7 @@ function App() {
               : `至少 ${i + 1} 榜 · 探索模式`,
         }))}
       />
-      <div className="switch-line">
+      <div className="flex items-center justify-between gap-[8px] text-[10px] text-[#718794] my-[17px] max-[760px]:col-span-full max-[760px]:my-[8px]">
         <span>允许 AA 估算分数</span>
         <Switch
           size="small"
@@ -820,8 +852,8 @@ function App() {
           aria-label="允许 AA 估算分数"
         />
       </div>
-      <div className="divider" />
-      <div className="switch-line">
+      <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-[760px]:my-[6px] max-[760px]:col-span-full" />
+      <div className="flex items-center justify-between gap-[8px] text-[10px] text-[#718794] my-[17px] max-[760px]:col-span-full max-[760px]:my-[8px]">
         <span>排除历史配置</span>
         <Switch
           aria-label="排除历史配置"
@@ -830,7 +862,7 @@ function App() {
           onChange={setExcludeHistorical}
         />
       </div>
-      <div className="switch-line">
+      <div className="flex items-center justify-between gap-[8px] text-[10px] text-[#718794] my-[17px] max-[760px]:col-span-full max-[760px]:my-[8px]">
         <span>排除过期 / 失败缓存</span>
         <Switch
           aria-label="排除过期或失败缓存"
@@ -839,11 +871,11 @@ function App() {
           onChange={setExcludeStale}
         />
       </div>
-      <p className="control-help">
+      <p className="control-help text-[10px] leading-[1.85] text-[#8a9aa4] mt-0 mb-[17px] max-[760px]:col-span-full max-[760px]:mt-[2px] max-[760px]:mb-[10px] max-[760px]:text-[9px]">
         过期指超过 24
         小时未成功获取。排除同时作用于分数、成本与前沿；原始单榜视图保留自己的配置开关。
       </p>
-      <div className="formula">
+      <div className="formula flex items-start gap-[8px] py-[11px] px-[12px] bg-[#f5f8fa] rounded-[8px] text-[10px] text-[#81959f] leading-[1.8] max-[760px]:col-span-full max-[760px]:mt-[4px] max-[760px]:text-[9px]">
         <InfoCircleOutlined aria-hidden="true" />
         <span>
           覆盖度只作信息展示，不额外加分。切换口径会重新计算基准样本。
@@ -876,7 +908,9 @@ function App() {
           <span className="brand-mark">
             <LineChartOutlined aria-hidden="true" />
           </span>
-          <b>模型观测台</b>
+          <b className="text-[18px] font-[650] tracking-[0.025em] max-[760px]:text-[16px]">
+            模型观测台
+          </b>
           <span className="brand-en">MODEL ATLAS</span>
         </div>
         <div className="header-right">
@@ -907,12 +941,14 @@ function App() {
           </Button>
         </div>
       </header>
-      <main>
+      <main className="mx-auto max-w-[1640px] pt-[28px] px-[38px] pb-[20px] max-[1180px]:pt-[26px] max-[1180px]:px-[25px] max-[760px]:pt-[24px] max-[760px]:px-[16px]">
         <div className="page-heading">
           <div>
             <div className="eyebrow">AA / VALS / LIVEBENCH</div>
-            <h1>三榜融合，全面认识一个模型</h1>
-            <p>
+            <h1 className="text-[29px] leading-[1.4] font-[650] tracking-[-0.035em] my-[10px] max-[1180px]:text-[26px] max-[760px]:text-[23px] max-[760px]:leading-[1.5]">
+              三榜融合，全面认识一个模型
+            </h1>
+            <p className="text-[12px] leading-[1.8] text-[#657e8d] m-0 max-[760px]:text-[11px] max-[760px]:leading-[1.9]">
               综合排行、单榜证据、模型对比与成本前沿。持续发现新模型，重点关注开放权重。
             </p>
           </div>
@@ -937,7 +973,7 @@ function App() {
                 { value: 24, label: "每天自动刷新" },
               ]}
             />
-            <small>
+            <small className="col-span-full flex justify-end items-center gap-[5px] text-right text-[#8b9aa4] text-[10px] max-[760px]:w-full max-[760px]:justify-start max-[760px]:text-[9px] max-[760px]:mt-[2px]">
               <ClockCircleOutlined aria-hidden="true" /> 服务运行期间自动更新
             </small>
           </div>
@@ -961,49 +997,69 @@ function App() {
           />
         )}
         <section className="metrics">
-          <div>
+          <div className="relative border border-line rounded-[12px] bg-surface shadow-card pt-[20px] px-[21px] pb-[17px] max-[1180px]:py-[18px] max-[1180px]:px-[16px] max-[760px]:pt-[16px] max-[760px]:px-[15px] max-[760px]:pb-[15px] max-[760px]:min-w-0">
             <AppstoreOutlined
               className="metric-icon tone-blue"
               aria-hidden="true"
             />
-            <small>自动发现模型族</small>
-            <strong>
+            <small className="block text-[11px] text-[#718592] max-[760px]:text-[10px]">
+              自动发现模型族
+            </small>
+            <strong className="block text-[31px] font-semibold tracking-[-0.045em] leading-[1.65] tabular-nums max-[760px]:text-[28px] max-[760px]:leading-[1.7]">
               {data?.models.length ?? "—"}
-              <em>个</em>
+              <em className="text-[11px] not-italic tracking-normal font-normal text-[#9aa7af] ml-[9px] max-[760px]:text-[9px]">
+                个
+              </em>
             </strong>
-            <span>来自三站完整数据的并集</span>
+            <span className="text-[10px] text-[#8b9aa5] max-[1180px]:text-[9px] max-[760px]:text-[8px] max-[760px]:leading-[1.6] max-[760px]:block">
+              来自三站完整数据的并集
+            </span>
           </div>
-          <div>
+          <div className="relative border border-line rounded-[12px] bg-surface shadow-card pt-[20px] px-[21px] pb-[17px] max-[1180px]:py-[18px] max-[1180px]:px-[16px] max-[760px]:pt-[16px] max-[760px]:px-[15px] max-[760px]:pb-[15px] max-[760px]:min-w-0">
             <UnlockOutlined
               className="metric-icon tone-teal"
               aria-hidden="true"
             />
-            <small>开放权重模型族</small>
-            <strong>
+            <small className="block text-[11px] text-[#718592] max-[760px]:text-[10px]">
+              开放权重模型族
+            </small>
+            <strong className="block text-[31px] font-semibold tracking-[-0.045em] leading-[1.65] tabular-nums max-[760px]:text-[28px] max-[760px]:leading-[1.7]">
               {data?.models.filter((m) => m.openWeights === true).length ?? "—"}
-              <em>个</em>
+              <em className="text-[11px] not-italic tracking-normal font-normal text-[#9aa7af] ml-[9px] max-[760px]:text-[9px]">
+                个
+              </em>
             </strong>
-            <span>按源站元数据与许可证识别</span>
+            <span className="text-[10px] text-[#8b9aa5] max-[1180px]:text-[9px] max-[760px]:text-[8px] max-[760px]:leading-[1.6] max-[760px]:block">
+              按源站元数据与许可证识别
+            </span>
           </div>
-          <div>
+          <div className="relative border border-line rounded-[12px] bg-surface shadow-card pt-[20px] px-[21px] pb-[17px] max-[1180px]:py-[18px] max-[1180px]:px-[16px] max-[760px]:pt-[16px] max-[760px]:px-[15px] max-[760px]:pb-[15px] max-[760px]:min-w-0">
             <DotChartOutlined
               className="metric-icon tone-violet"
               aria-hidden="true"
             />
-            <small>有效综合评分</small>
-            <strong>
+            <small className="block text-[11px] text-[#718592] max-[760px]:text-[10px]">
+              有效综合评分
+            </small>
+            <strong className="block text-[31px] font-semibold tracking-[-0.045em] leading-[1.65] tabular-nums max-[760px]:text-[28px] max-[760px]:leading-[1.7]">
               {analysis.rows.filter((r) => r.composite != null).length}
-              <em>个</em>
+              <em className="text-[11px] not-italic tracking-normal font-normal text-[#9aa7af] ml-[9px] max-[760px]:text-[9px]">
+                个
+              </em>
             </strong>
-            <span>至少 {analysis.required} 榜有效分数 · 不要求成本</span>
+            <span className="text-[10px] text-[#8b9aa5] max-[1180px]:text-[9px] max-[760px]:text-[8px] max-[760px]:leading-[1.6] max-[760px]:block">
+              至少 {analysis.required} 榜有效分数 · 不要求成本
+            </span>
           </div>
-          <div>
+          <div className="relative border border-line rounded-[12px] bg-surface shadow-card pt-[20px] px-[21px] pb-[17px] max-[1180px]:py-[18px] max-[1180px]:px-[16px] max-[760px]:pt-[16px] max-[760px]:px-[15px] max-[760px]:pb-[15px] max-[760px]:min-w-0">
             <RiseOutlined
               className="metric-icon tone-amber"
               aria-hidden="true"
             />
-            <small>三榜共同覆盖</small>
-            <strong className="green">
+            <small className="block text-[11px] text-[#718592] max-[760px]:text-[10px]">
+              三榜共同覆盖
+            </small>
+            <strong className="block text-[31px] font-semibold tracking-[-0.045em] leading-[1.65] tabular-nums text-green max-[760px]:text-[28px] max-[760px]:leading-[1.7]">
               {evaluationModels.filter((m) =>
                 Object.keys(NAMES).every(
                   (key) =>
@@ -1011,13 +1067,17 @@ function App() {
                     (!m.representatives[key]?.estimated || estimated),
                 ),
               ).length ?? 0}
-              <em>个</em>
+              <em className="text-[11px] not-italic tracking-normal font-normal text-[#9aa7af] ml-[9px] max-[760px]:text-[9px]">
+                个
+              </em>
             </strong>
-            <span>三个来源均披露有效总分</span>
+            <span className="text-[10px] text-[#8b9aa5] max-[1180px]:text-[9px] max-[760px]:text-[8px] max-[760px]:leading-[1.6] max-[760px]:block">
+              三个来源均披露有效总分
+            </span>
           </div>
         </section>
         <Tabs
-          className="portal-tabs"
+          className="portal-tabs min-w-0"
           activeKey={tab}
           onChange={navigate}
           items={[
@@ -1054,7 +1114,7 @@ function App() {
           ]}
         />
         <div className="scoring-context">
-          <span>
+          <span className="flex items-center gap-[8px] flex-wrap">
             <SettingOutlined aria-hidden="true" />{" "}
             {PRESETS[preset]?.label ?? "自定义权重"} ·{" "}
             {Object.entries(weights)
@@ -1135,10 +1195,10 @@ function App() {
         )}
         {tab === "explore" && (
           <>
-            <section className="workspace">
+            <section className="grid grid-cols-[254px_minmax(0,1fr)] gap-[19px] mb-[22px] items-start max-[1180px]:grid-cols-[235px_minmax(0,1fr)] max-[1180px]:gap-[16px] max-[760px]:flex max-[760px]:flex-col max-[760px]:gap-[16px]">
               {controls}
-              <div className="panel chart-panel">
-                <div className="chart-heading">
+              <div className="panel min-w-0 overflow-hidden pt-[23px] px-[23px] pb-[16px] max-[1180px]:pt-[21px] max-[1180px]:px-[18px] max-[1180px]:pb-[15px] max-[760px]:w-full max-[760px]:pt-[20px] max-[760px]:px-[13px] max-[760px]:pb-[14px]">
+                <div className="chart-heading flex items-start justify-between gap-[16px] mb-[19px] max-[1180px]:flex-col max-[1180px]:gap-[12px] max-[760px]:mb-[12px] max-[760px]:gap-[12px]">
                   <div>
                     <div className="eyebrow">QUALITY & COST</div>
                     <h2>综合能力 / 成本前沿</h2>
@@ -1176,7 +1236,7 @@ function App() {
                 {enabled === 0 ? (
                   <Empty description="至少启用一个榜单" />
                 ) : !data ? (
-                  <div className="loading">
+                  <div className="h-[448px] flex flex-col items-center justify-center text-[#8c9ba5] text-[12px]">
                     <Spin />
                     <p>正在读取模型数据…</p>
                   </div>
@@ -1190,23 +1250,26 @@ function App() {
                     costProfile={analysis.costProfile}
                   />
                 ) : (
-                  <div className="loading">
+                  <div className="h-[448px] flex flex-col items-center justify-center text-[#8c9ba5] text-[12px]">
                     <Empty description="当前口径没有可入图模型。可切换成本来源，或选择广覆盖双榜。" />
                   </div>
                 )}
               </div>
             </section>
-            <section className="panel models-panel">
-              <div className="table-toolbar">
+            <section className="panel models-panel overflow-hidden">
+              <div className="table-toolbar flex justify-between items-center gap-[20px] py-[22px] px-[24px] max-[1180px]:flex-col max-[1180px]:items-start max-[760px]:py-[20px] max-[760px]:px-[17px] max-[760px]:pb-[18px] max-[760px]:gap-[13px]">
                 <div>
                   <h2>
-                    模型全景 <span>{rows.length}</span>
+                    模型全景{" "}
+                    <span className="text-[10px] font-medium text-[#5d8d7e] border border-[#dfede6] bg-[#f1f8f4] inline-block py-[1px] px-[7px] rounded-[5px] ml-[6px] align-middle">
+                      {rows.length}
+                    </span>
                   </h2>
-                  <p>
+                  <p className="text-[10px] leading-[1.8] text-[#8c9ba5] mt-[7px] mb-0 max-[760px]:text-[9px]">
                     未覆盖完整榜单的模型仍保留在表中，缺分和缺成本分别标记。
                   </p>
                 </div>
-                <div className="table-filters">
+                <div className="table-filters flex items-center gap-[13px] max-[1180px]:w-full max-[760px]:flex-wrap max-[760px]:gap-[10px]">
                   <Checkbox
                     checked={onlyFront}
                     onChange={(e) => setOnlyFront(e.target.checked)}
@@ -1252,32 +1315,39 @@ function App() {
           </>
         )}
         {tab === "stability" && (
-          <section className="panel comparison">
-            <div className="section-heading">
+          <section className="panel p-[26px] max-[760px]:py-[21px] max-[760px]:px-[17px]">
+            <div>
               <h2>结论对权重敏感吗？</h2>
-              <p>
+              <p className="text-[12px] leading-[1.9] text-[#82949f] max-w-[900px] max-[760px]:text-[11px]">
                 三套预设分别重算完整覆盖样本。没有“一套权重证明的绝对最强”，只报告模型在哪些口径进入前沿。
               </p>
             </div>
-            <div className="preset-cards">
+            <div className="preset-cards grid grid-cols-3 gap-[17px] my-[23px] max-[1180px]:grid-cols-1">
               {comparisons.map((c) => (
-                <div key={c.key}>
+                <div
+                  key={c.key}
+                  className="border border-[#e5ecef] rounded-[11px] p-[21px] bg-[linear-gradient(160deg,#f8fbfa,#fff_65%)] max-[760px]:p-[18px]"
+                >
                   <Tag color={c.key === "capability" ? "green" : "default"}>
                     {c.label}
                   </Tag>
-                  <p>
+                  <p className="text-[10px] text-[#8a9ca4] leading-[1.9]">
                     {Object.entries(PRESETS[c.key].weights)
                       .map(([s, w]) => `${NAMES[s]} ${Number(w.toFixed(1))}%`)
                       .join(" / ")}
                   </p>
-                  <strong>
+                  <strong className="block text-[17px] font-[550] my-[19px]">
                     {c.rows.filter((r) => r.openFrontier).length} 个开放权重前沿
                   </strong>
-                  <div className="frontier-names">
+                  <div>
                     {c.rows
                       .filter((r) => r.openFrontier)
                       .map((r) => (
-                        <button key={r.id} onClick={() => setSelected(r.id)}>
+                        <button
+                          key={r.id}
+                          onClick={() => setSelected(r.id)}
+                          className="flex justify-between items-center gap-[12px] w-full py-[11px] px-[12px] border border-[#e5efea] rounded-[7px] bg-[#f5faf7] text-[#4c8b75] text-left text-[12px] mb-[7px] cursor-pointer hover:bg-[#eaf5ee]"
+                        >
                           {r.name}
                           <ExportOutlined aria-hidden="true" />
                         </button>
@@ -1286,14 +1356,14 @@ function App() {
                 </div>
               ))}
             </div>
-            <p className="muted">
+            <p className="muted text-[11px] text-[#6b818f] leading-[1.85]">
               成本来源：{COSTS[costSource]}
               。三套预设使用同一组榜单和完整覆盖样本。这是口径敏感性比较，不是统计显著性检验。
             </p>
-            <div className="divider" />
-            <div className="section-heading">
+            <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-[760px]:my-[6px]" />
+            <div>
               <h2>前沿稳定性指数</h2>
-              <p>
+              <p className="text-[12px] leading-[1.9] text-[#82949f] max-w-[900px] max-[760px]:text-[11px]">
                 固定同一批 {stability.cohort}{" "}
                 个模型：要求三榜有效分数和三源任务成本齐全。三套能力权重 ×
                 四种成本口径，共 12 个场景；指数为入选次数 / 12 ×
@@ -1349,13 +1419,15 @@ function App() {
                           .join("；") || "无"
                       }
                     >
-                      <span className="muted">悬浮查看明细</span>
+                      <span className="muted text-[11px] text-[#6b818f] leading-[1.85]">
+                        悬浮查看明细
+                      </span>
                     </Tooltip>
                   ),
                 },
               ]}
             />
-            <p className="muted">
+            <p className="muted text-[11px] text-[#6b818f] leading-[1.85]">
               这是对已列出的 12
               种设定的稳健性描述，不是“模型最优的概率”，也不是统计置信度。不同前沿模型可能代表不同预算与能力取舍，不按单一指数替代二维图。
             </p>
@@ -1371,10 +1443,13 @@ function App() {
             >
               查看更新记录
             </Button>
-            <section className="source-grid">
+            <section className="grid grid-cols-2 gap-[19px] max-[1180px]:gap-[16px] max-[760px]:grid-cols-1">
               {Object.entries(data?.sources ?? {}).map(([id, s]) => (
-                <div className="panel source-card" key={id}>
-                  <div className="source-title">
+                <div
+                  className="panel source-card p-[24px] max-[760px]:p-[21px]"
+                  key={id}
+                >
+                  <div className="source-title flex items-center justify-between">
                     <h2>
                       <DatabaseOutlined aria-hidden="true" /> {s.name}
                     </h2>
@@ -1390,41 +1465,55 @@ function App() {
                             : "未读取"}
                     </Tag>
                   </div>
-                  <p>{s.metric}</p>
-                  <strong>
+                  <p className="text-[11px] text-[#8a9da7]">{s.metric}</p>
+                  <strong className="text-[32px] font-[550] tabular-nums tracking-[-0.04em]">
                     {s.count}
-                    <small> 条源站模型配置</small>
+                    <small className="text-[10px] font-normal text-[#99a8b1] ml-[8px] tracking-normal">
+                      {" "}
+                      条源站模型配置
+                    </small>
                   </strong>
-                  <dl>
-                    <dt>源站版本 / 更新标签</dt>
-                    <dd>{s.sourceDate ?? "源站未披露"}</dd>
-                    <dt>最后成功获取</dt>
-                    <dd>{formatTime(s.fetchedAt)}</dd>
-                    <dt>最近尝试</dt>
-                    <dd>{formatTime(s.attemptedAt)}</dd>
+                  <dl className="grid grid-cols-[125px_1fr] gap-[13px] text-[11px] py-[18px] border-t border-b border-[#edf2f4] my-[21px] max-[760px]:grid-cols-[110px_1fr] max-[760px]:text-[10px]">
+                    <dt className="text-[#92a3ad]">源站版本 / 更新标签</dt>
+                    <dd className="m-0 text-[#5c7684] [overflow-wrap:anywhere]">
+                      {s.sourceDate ?? "源站未披露"}
+                    </dd>
+                    <dt className="text-[#92a3ad]">最后成功获取</dt>
+                    <dd className="m-0 text-[#5c7684] [overflow-wrap:anywhere]">
+                      {formatTime(s.fetchedAt)}
+                    </dd>
+                    <dt className="text-[#92a3ad]">最近尝试</dt>
+                    <dd className="m-0 text-[#5c7684] [overflow-wrap:anywhere]">
+                      {formatTime(s.attemptedAt)}
+                    </dd>
                   </dl>
                   {s.error && <Alert type="warning" title={s.error} />}
-                  <ul>
+                  <ul className="text-[11px] leading-[1.9] pl-[16px] text-[#93a2ab]">
                     {s.notes?.map((n, i) => (
                       <li key={i}>{n}</li>
                     ))}
                   </ul>
-                  <a href={s.url} target="_blank" rel="noreferrer">
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px]"
+                  >
                     打开原始榜单 <ExportOutlined aria-hidden="true" />
                   </a>
                 </div>
               ))}
-              <div className="panel update-notes">
+              <div className="panel update-notes col-span-full p-[25px] text-[12px] leading-[1.9] text-[#81949f] max-[760px]:p-[21px] max-[760px]:text-[11px]">
                 <h2>自动更新如何工作</h2>
-                <p>
+                <p className="max-w-[1120px]">
                   本地服务启动后检查缓存，按设置的间隔从三个源站读取。无需 API
                   key，也无需在聊天中指定模型名称。新模型通过名称规则自动加入；无法确认同一发布版本的名称会分别保留。
                 </p>
-                <p>
+                <p className="max-w-[1120px]">
                   三站均通过后台 HTTP 读取公开页面、内嵌数据和
                   CSV，刷新不会启动浏览器。单站失败会保留该站最后一次成功数据并显示原因；不会用空表覆盖。服务关闭、电脑休眠或断网期间不执行抓取，下次启动补更。源站结构或访问策略变化时，适配器可能需要维护。
                 </p>
-                <p>
+                <p className="max-w-[1120px]">
                   开放权重来自 AA 的 isOpenWeights 和 LiveBench 的
                   openweight。源站意见冲突时标为“来源有分歧”；未确认的模型不会被自动当作开放模型。开放权重与
                   OSI 开源是不同概念。
@@ -1433,7 +1522,7 @@ function App() {
             </section>
           </>
         )}
-        <footer>
+        <footer className="flex justify-between gap-[20px] pt-[25px] pb-[28px] text-[#a0adb5] text-[9px] leading-[1.9] tracking-[0.025em] max-[760px]:flex-col max-[760px]:gap-[7px] max-[760px]:py-[23px] max-[760px]:text-[8px]">
           <span>MODEL ATLAS / 三榜融合工作台</span>
           <span>
             数据最后刷新尝试：{formatTime(data?.lastRefresh)}
@@ -1441,11 +1530,13 @@ function App() {
           </span>
         </footer>
         {selection.length > 0 && tab !== "compare" && (
-          <div className="comparison-tray">
-            <div>
+          <div className="comparison-tray sticky bottom-[16px] z-30 flex justify-between items-center gap-[20px] py-[13px] px-[18px] border border-[#cddfd9] rounded-[11px] bg-[#fffffff5] backdrop-blur-[12px] shadow-[0_6px_30px_#20443b1f] max-[760px]:flex-col max-[760px]:items-stretch max-[760px]:gap-[10px] max-[760px]:p-[12px] max-[760px]:bottom-[10px]">
+            <div className="flex items-center gap-[10px] min-w-0 max-[760px]:flex-wrap max-[760px]:gap-[8px]">
               <SwapOutlined aria-hidden="true" />
-              <b>已选 {selection.length}/4</b>
-              <div className="tray-models">
+              <b className="whitespace-nowrap text-[12px]">
+                已选 {selection.length}/4
+              </b>
+              <div className="tray-models flex flex-wrap gap-[5px] max-[760px]:hidden">
                 {selection.map((id) => (
                   <Tag
                     key={id}
@@ -1459,7 +1550,7 @@ function App() {
                 ))}
               </div>
             </div>
-            <div>
+            <div className="flex items-center gap-[10px] min-w-0 max-[760px]:flex-wrap max-[760px]:gap-[8px] max-[760px]:justify-end">
               <Button onClick={() => updateSelection([])}>清空</Button>
               <Button
                 type="primary"
@@ -1479,7 +1570,7 @@ function App() {
         width={650}
       >
         <div className="model-detail">
-          <div className="detail-actions">
+          <div className="flex flex-wrap gap-[10px] mb-[22px]">
             <Button onClick={() => openHistory(current)}>查看此模型历史</Button>
             <Button
               icon={<SwapOutlined aria-hidden="true" />}
@@ -1505,7 +1596,7 @@ function App() {
               打开模型对比
             </Button>
           </div>
-          <p>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             {current?.creator}　
             {current?.openWeights === true ? (
               <Tag color="green">开放权重</Tag>
@@ -1519,7 +1610,9 @@ function App() {
               </Tag>
             )}
           </p>
-          <p>许可证：{current?.licenses.join(" / ") || "源站未披露"}</p>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
+            许可证：{current?.licenses.join(" / ") || "源站未披露"}
+          </p>
           <EvidenceBadges model={current ?? {}} sources={data?.sources} />
           {current && <ConfigurationDetails model={current} />}
           <Alert
@@ -1527,28 +1620,43 @@ function App() {
             title="按模型族归并。这里保留各榜单具体配置；跨站分数不代表同一个推理档位。"
           />
           {current?.dominatedBy.length > 0 && (
-            <p>
+            <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
               当前口径下可同时做到成本不高、综合分不低的前沿模型：
               {current.dominatedBy.join("、")}
             </p>
           )}
           {current && (
-            <section className="detail-audit">
-              <h3>为什么在这个口径下是 / 不是前沿？</h3>
-              <p>
-                当前综合分 <b>{current.composite?.toFixed(2) ?? "未评分"}</b>
+            <section className="p-[20px] bg-white border border-[#e4ecef] rounded-[11px] mt-[20px] max-[760px]:p-[16px]">
+              <h3 className="text-[14px] font-semibold mt-[5px] mb-[14px] text-[#3b5867]">
+                为什么在这个口径下是 / 不是前沿？
+              </h3>
+              <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
+                当前综合分{" "}
+                <b className="text-[#416775]">
+                  {current.composite?.toFixed(2) ?? "未评分"}
+                </b>
                 （有效覆盖 {current.available.length}{" "}
                 个榜单，覆盖度不参与加分），{COSTS[costSource]}{" "}
-                <b>{costFormat(current.cost, costSource)}</b>
+                <b className="text-[#416775]">
+                  {costFormat(current.cost, costSource)}
+                </b>
                 。以下保持当前综合分口径，只切换成本来源；比较样本仍按当前覆盖门槛选取。
               </p>
-              <table className="audit-table">
+              <table className="w-full border-collapse text-[10px] mt-[12px] tabular-nums max-[760px]:text-[9px]">
                 <thead>
                   <tr>
-                    <th>成本来源</th>
-                    <th>成本</th>
-                    <th>全球前沿</th>
-                    <th>开放前沿</th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      成本来源
+                    </th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      成本
+                    </th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      全球前沿
+                    </th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      开放前沿
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1561,18 +1669,20 @@ function App() {
                     }).rows.find((r) => r.id === current.id);
                     return (
                       <tr key={source}>
-                        <td>
+                        <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
                           {source === "composite" ? "综合指数" : NAMES[source]}
                         </td>
-                        <td>{costFormat(a?.cost, source)}</td>
-                        <td>
+                        <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                          {costFormat(a?.cost, source)}
+                        </td>
+                        <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
                           {!a?.plottable
                             ? "缺分 / 缺成本"
                             : a.frontier
                               ? "是"
                               : "否"}
                         </td>
-                        <td>
+                        <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
                           {!a?.plottable ? "—" : a.openFrontier ? "是" : "否"}
                         </td>
                       </tr>
@@ -1580,55 +1690,80 @@ function App() {
                   })}
                 </tbody>
               </table>
-              <p className="muted">
+              <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                 任务集合和定价快照不同，三个来源的美元任务成本不等价。
               </p>
-              <h3>综合成本的可复算明细</h3>
-              <p className="muted">
+              <h3 className="text-[14px] font-semibold mt-[26px] mb-[14px] text-[#3b5867]">
+                综合成本的可复算明细
+              </h3>
+              <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                 完整三源时，指数 = 100 × ∛[(AA / AA 中位数) × (Vals / Vals
                 中位数) × (LiveBench / LiveBench
                 中位数)]。缺一源时，对两个有效比值取平方根；至少需两源。已有成本来源等权，与能力权重独立；主动排除来源时，基准按剩余至少两源的共同样本重算。不同基准的倍数不可直接比较。部分覆盖并非等价实验。
               </p>
-              <table className="audit-table">
+              <table className="w-full border-collapse text-[10px] mt-[12px] tabular-nums max-[760px]:text-[9px]">
                 <thead>
                   <tr>
-                    <th>来源</th>
-                    <th>原始任务成本</th>
-                    <th>基准中位数</th>
-                    <th>相对倍数</th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      来源
+                    </th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      原始任务成本
+                    </th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      基准中位数
+                    </th>
+                    <th className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] bg-[#f6f9fb] font-medium text-[#8197a4] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                      相对倍数
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {current.costComponents.map((c) => (
                     <tr key={c.source}>
-                      <td>{NAMES[c.source]}</td>
-                      <td>{money(c.cost)}</td>
-                      <td>{money(c.baseline)}</td>
-                      <td>
+                      <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                        {NAMES[c.source]}
+                      </td>
+                      <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                        {money(c.cost)}
+                      </td>
+                      <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
+                        {money(c.baseline)}
+                      </td>
+                      <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-[760px]:py-[10px] max-[760px]:px-[5px]">
                         {c.ratio == null ? "缺失" : c.ratio.toFixed(3) + "×"}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <h3>回到单榜，使用该榜自己的完整样本</h3>
-              <p className="muted">
+              <h3 className="text-[14px] font-semibold mt-[26px] mb-[14px] text-[#3b5867]">
+                回到单榜，使用该榜自己的完整样本
+              </h3>
+              <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                 以下单榜核对独立于综合质量排除开关；原始记录保留，不代表仍参与当前综合计算。
               </p>
               {Object.keys(NAMES).map((source) => {
                 const a = sourceAudit(data?.models ?? [], current.id, source);
                 return (
-                  <div className="audit-item" key={source}>
-                    <b>{NAMES[source]}</b>
+                  <div
+                    className="py-[14px] border-b border-[#edf1f4]"
+                    key={source}
+                  >
+                    <b className="text-[12px] text-[#4b6b7a]">
+                      {NAMES[source]}
+                    </b>
                     {!a?.available ? (
-                      <p className="muted">{a?.reason}</p>
+                      <p className="text-[10px] leading-[1.8] my-[7px] text-[#8a9da6]">
+                        {a?.reason}
+                      </p>
                     ) : (
                       <>
-                        <p>
+                        <p className="text-[10px] leading-[1.8] my-[7px] text-[#8a9da6]">
                           {a.name} · 原始分 {a.score.toFixed(2)} ·{" "}
                           {money(a.cost)}
                         </p>
-                        <p className="muted">
+                        <p className="text-[10px] leading-[1.8] my-[7px] text-[#8a9da6]">
                           {a.basis} · {a.population} 条有效源配置 ·{" "}
                           {a.frontier
                             ? "该配置在前沿"
@@ -1637,7 +1772,7 @@ function App() {
                               : "未进入该口径前沿"}
                         </p>
                         {a.dominatedBy.length > 0 && (
-                          <p className="muted">
+                          <p className="text-[10px] leading-[1.8] my-[7px] text-[#8a9da6]">
                             可支配该配置：{a.dominatedBy.join("、")}
                           </p>
                         )}
@@ -1646,7 +1781,7 @@ function App() {
                   </div>
                 );
               })}
-              <p className="muted">
+              <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                 这里剔除 AA 历史 / 估算配置。LiveBench
                 单榜核对采用每次成功任务成本，并在上方明确标记。
               </p>
@@ -1656,33 +1791,45 @@ function App() {
             const r = (current?.originalRepresentatives ??
               current?.representatives)?.[s];
             return (
-              <section className="detail-source" key={s}>
-                <h3>
+              <section
+                className="p-[20px] bg-white border border-[#e4ecef] rounded-[11px] mt-[20px] max-[760px]:p-[16px]"
+                key={s}
+              >
+                <h3 className="flex justify-between items-center text-[14px] font-semibold mt-[5px] mb-[14px] text-[#3b5867]">
                   {name}
                   {r && (
-                    <a href={r.url} target="_blank" rel="noreferrer">
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] font-normal"
+                    >
                       源数据 <ExportOutlined aria-hidden="true" />
                     </a>
                   )}
                 </h3>
                 {!r ? (
-                  <p className="muted">未发现可确认对应的模型，未补分。</p>
+                  <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
+                    未发现可确认对应的模型，未补分。
+                  </p>
                 ) : (
                   <>
-                    <p>
-                      <b>
+                    <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
+                      <b className="text-[#416775]">
                         {r.score == null ? "无有效总分" : r.score.toFixed(3)}
                       </b>
                       　{r.estimated && <Tag color="orange">估算分</Tag>}
                       {r.deprecated && <Tag>AA 历史条目</Tag>}
                     </p>
-                    <p>{r.configuration ?? r.name}</p>
-                    <p>
+                    <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
+                      {r.configuration ?? r.name}
+                    </p>
+                    <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                       任务成本 {money(r.costTask)} · 输入 / 输出单价{" "}
                       {money(r.priceInput)} / {money(r.priceOutput)} 每百万
                       token
                     </p>
-                    <p className="muted">
+                    <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                       {
                         (current?.originalRecords ?? current?.records)?.[s]
                           ?.length
@@ -1690,10 +1837,15 @@ function App() {
                       个源站配置；选取非估算、非历史配置优先，其后按总分择优。成本始终绑定这条配置。
                     </p>
                     <details>
-                      <summary>查看该榜全部配置</summary>
+                      <summary className="text-[10px] text-[#57927c] cursor-pointer leading-[2]">
+                        查看该榜全部配置
+                      </summary>
                       {(current?.originalRecords ?? current?.records)?.[s]?.map(
                         (v, i) => (
-                          <p className="variant" key={i}>
+                          <p
+                            className="bg-[#f6f9fa] py-[8px] px-[10px] rounded-[6px] text-[10px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]"
+                            key={i}
+                          >
                             {v.name} · {v.score ?? "无分数"} ·{" "}
                             {money(v.costTask)}
                           </p>
@@ -1721,32 +1873,38 @@ function App() {
         width={650}
       >
         <article className="method">
-          <h3>如何设置三榜权重？</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
+            如何设置三榜权重？
+          </h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             默认 AA 40%、Vals 35%、LiveBench
             25%，兼顾通用能力和任务实践。另有三榜等权及任务实践优先，便于检验结论对权重的敏感性。这是可调整的分析判断，不声称是经验证明的最优权重，也不用网站流量估计评测质量。Arena
             的偏好投票与任务能力是不同信号；为保证无人值守刷新，此应用已移除其采集和评分。
           </p>
-          <h3>如何计算综合分？</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
+            如何计算综合分？
+          </h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             先按当前启用榜单和最低覆盖门槛选择基准样本；每榜对有效原始分排序，并列取平均名次。排名分数
             = 100 × (N − r) / (N − 1)，单模型样本记为 50。按非零权重加权得到
             0–100
             相对分数，不叠加覆盖奖励。排名保留顺序、舍弃原始分差，不是正确率。
           </p>
-          <p>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             默认至少 2
             榜。覆盖度仅作为证据信息展示，不参与能力分数。多榜提及不自动等同于独立证据，也不推导统计可信概率。
           </p>
-          <p>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             严格模式要求全部启用榜单都有有效分数。探索模式允许不完整覆盖，在各榜可用样本内归一化，再对模型已有权重重新分配，因此不同模型比较依据可能不一致。部分覆盖使用信息图标标注，只适合发现候选。切换模型显示范围或搜索不会重算分数及前沿；更改权重、榜单、覆盖门槛或估算开关会重算。
           </p>
-          <h3>为何更关注开放权重？</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
+            为何更关注开放权重？
+          </h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             全量发现三站模型，按源站披露开放状态识别，未设置中国厂商或模型白名单。既显示全球前沿，也显示仅在开放权重模型中计算的前沿，防止闭源最强模型遮住可部署候选。只看开放权重时，全球参照前沿保持原定义。
           </p>
-          <h3>成本与前沿</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">成本与前沿</h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             默认使用综合相对成本指数：以三站都有正任务成本、且估算设置允许的固定模型样本为成本基准，各站成本除以该站中位数，再取三源等权几何平均并乘
             100。三源权重各
             1/3，与能力权重独立；页面以基准的多少倍展示（原指数除以
@@ -1757,36 +1915,42 @@ function App() {
             任务成本不能替代本地部署的
             GPU、运维和利用率成本。成本缺失、非正或低于显示精度不填零，也不放入对数轴。
           </p>
-          <p>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             若另一模型成本不高且综合分不低，并至少一项严格更优，则该模型被支配。前沿图中以最便宜的前沿模型为锚点绘制「被支配区」：该锚点同时是前沿上综合分最高的点，其右下方整个区域内的模型都被它以更低成本、更高综合分支配。连线只是视觉引导，不代表两个模型之间存在可连续插值的选项。标签重叠时会自动隐藏，可通过悬浮或表格查看。
           </p>
-          <h3>数据质量与配置差异</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
+            数据质量与配置差异
+          </h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             配置提示只比较明确披露的 effort
             和推理模式；相同档位标签不代表统一实验。默认保留历史与失败回退缓存，允许主动排除。过期缓存指超过
             24
             小时未成功获取，排除时同时移除其能力与成本证据；不按源站发布日期自动扣分。快照仅记录实际观察的源配置变化，相同数据不重复保存；起始快照可来自已有缓存，不补造过去历史。
           </p>
-          <h3>能力维度与预算筛选</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
+            能力维度与预算筛选
+          </h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             融合排行榜可打开「LiveBench
             能力维度」列，按编程、推理、研究等分类原始分排序，减少只看一个综合分的信息损失。仅
             LiveBench 提供能力维度；AA 与 Vals
             没有对应数据，缺失保持空白，也不把分类分外推成综合能力。预算筛选按单一来源的真实美元任务成本隐藏超出上限的模型，未披露该来源成本的模型一并隐藏；它只改变显示范围，不改变分数、名次与前沿，综合相对成本仍只用于跨源观察，不充当美元预算。
           </p>
-          <h3>分享与复核</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">分享与复核</h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             「复制分享链接」把当前权重、覆盖门槛、估算与质量排除开关、成本口径、预算筛选、排行榜筛选和对比选择写入页面地址；打开同一链接即在同一口径下复核结论。CSV
             导出附带数据时间与完整评分口径，数据本身以快照时间为准。排行榜页的「覆盖口径差异」面板并排展示严格口径与探索口径的名次与前沿成员差异：差异来自比较样本与权重再分配，不代表模型能力变化。
           </p>
-          <h3>版本与统计边界</h3>
-          <p>
+          <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
+            版本与统计边界
+          </h3>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             名称只去除推理 effort 后缀，保留日期、Preview、Vision
             等发布区别。无法确认的名称不会模糊合并。模型族的不同推理配置单独保留；各站采用各自协议，部分
             Anthropic 数据含
             fallback。没有为综合分伪造置信区间，也不把微小分差解释为统计显著。
           </p>
-          <p>
+          <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             <a
               href="https://artificialanalysis.ai/methodology/intelligence-benchmarking"
               target="_blank"

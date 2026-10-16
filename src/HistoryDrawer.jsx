@@ -27,8 +27,12 @@ function changeValue(item, key, isMoney = false) {
   const format = isMoney ? money : raw;
   return (
     <div className="history-values">
-      <span>{item.before ? format(item.before[key]) : "无此配置"}</span>
-      <b>{item.after ? format(item.after[key]) : "不再列出"}</b>
+      <span className="block text-[11px] tabular-nums text-[#778c98]">
+        {item.before ? format(item.before[key]) : "无此配置"}
+      </span>
+      <b className="mt-[6px] block text-[11px] font-medium tabular-nums text-[#255d55] before:content-['→_'] before:text-[#819a93]">
+        {item.after ? format(item.after[key]) : "不再列出"}
+      </b>
     </div>
   );
 }
@@ -115,7 +119,7 @@ export default function HistoryDrawer({
       render: (_, r) => (
         <span>
           {r.after?.configuration ?? r.before?.configuration ?? r.name}
-          <small className="history-fields">
+          <small className="mt-[6px] block text-[10px] text-[#6a8190]">
             {r.fields.map((f) => FIELDS[f] ?? f).join("、")}
           </small>
         </span>
@@ -136,12 +140,12 @@ export default function HistoryDrawer({
       width: 230,
       render: (_, r) => (
         <div className="history-values">
-          <span>
+          <span className="block text-[11px] tabular-nums text-[#778c98]">
             {r.before
               ? `${money(r.before.priceInput)} / ${money(r.before.priceOutput)}`
               : "无此配置"}
           </span>
-          <b>
+          <b className="mt-[6px] block text-[11px] font-medium tabular-nums text-[#255d55] before:content-['→_'] before:text-[#819a93]">
             {r.after
               ? `${money(r.after.priceInput)} / ${money(r.after.priceOutput)}`
               : "不再列出"}
@@ -168,8 +172,9 @@ export default function HistoryDrawer({
         {(error || data?.error) && (
           <Alert type="warning" showIcon title={error ?? data.error} />
         )}
-        <div className="history-toolbar">
+        <div className="flex gap-[12px] my-[20px] max-[760px]:flex-col">
           <Select
+            className="w-[55%] max-[760px]:w-full"
             virtual={false}
             aria-label="历史快照"
             placeholder="选择历史快照"
@@ -181,6 +186,7 @@ export default function HistoryDrawer({
             }))}
           />
           <Input
+            className="min-w-0 flex-1"
             aria-label="搜索历史配置"
             prefix={<SearchOutlined aria-hidden="true" />}
             value={query}
@@ -190,41 +196,48 @@ export default function HistoryDrawer({
           />
         </div>
         {busy ? (
-          <div className="history-loading">
+          <div className="p-[70px] text-center">
             <Spin />
           </div>
         ) : !selected ? (
           <Empty description="尚无历史快照" />
         ) : (
           <>
-            <div className="history-window">
+            <div className="my-[15px] text-[11px] text-[#647e8d]">
               累计记录始于 {formatTime(data.startedAt)}；当前保留{" "}
               {data.recordCount} 份，最多 {data.limit} 份变化快照。
             </div>
             <div className="history-source-times">
               {Object.entries(selected.sources).map(([s, v]) => (
-                <div key={s}>
-                  <b>
+                <div
+                  key={s}
+                  className="min-w-0 rounded-[8px] border border-[#dfe8ed] bg-white p-[13px]"
+                >
+                  <b className="mb-[7px] block text-[11px] [overflow-wrap:anywhere]">
                     {NAMES[s]} · {v.count} 条配置
                   </b>
-                  <span>成功获取：{formatTime(v.fetchedAt)}</span>
-                  <span>源站版本 / 更新标签：{v.sourceDate ?? "未披露"}</span>
+                  <span className="block text-[10px] leading-[1.9] text-[#657e8c] [overflow-wrap:anywhere]">
+                    成功获取：{formatTime(v.fetchedAt)}
+                  </span>
+                  <span className="block text-[10px] leading-[1.9] text-[#657e8c] [overflow-wrap:anywhere]">
+                    源站版本 / 更新标签：{v.sourceDate ?? "未披露"}
+                  </span>
                 </div>
               ))}
             </div>
-            <h3>
+            <h3 className="mt-[24px] mb-[10px] text-[14px] font-semibold">
               {selected.kind === "baseline"
                 ? "起始快照"
                 : "相对于前一份快照的变化"}
             </h3>
-            <p>
+            <p className="text-[11px] leading-[1.9]">
               {selected.kind === "baseline"
                 ? "起始快照只建立基准，不将已有配置记为新发布或新增收录。"
                 : "新增 / 移除指源表中的配置收录变化，不代表模型发布或下线。各配置独立比较，不连接不同 effort 的价格或分数。"}
             </p>
             {selected.sourceChanges?.length > 0 &&
               selected.kind !== "baseline" && (
-                <p>
+                <p className="text-[11px] leading-[1.9]">
                   源站版本标签发生变化：
                   {selected.sourceChanges.map((s) => NAMES[s]).join("、")}。
                 </p>
@@ -247,7 +260,9 @@ export default function HistoryDrawer({
             />
             {modelId && (
               <>
-                <h3>此快照中的原始配置</h3>
+                <h3 className="mt-[24px] mb-[10px] text-[14px] font-semibold">
+                  此快照中的原始配置
+                </h3>
                 <Table
                   rowKey="id"
                   size="small"

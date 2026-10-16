@@ -31,9 +31,11 @@ npm run format:check  # Prettier 检查
 
 ## 已知坑
 
-- **antd Drawer 竞态**：`HistoryDrawer` 只在打开瞬间重置内容，关闭时清空会让滑出动画闪成空状态。改这块前先读该文件注释。
+- **antd Drawer 竞态**：`HistoryDrawer` 只在打开瞬间重置内容，关闭时清空会让抽屉在滑出动画中闪成空状态。改这块前先读该文件注释。
 - **ECharts 滚轮**：图表边界用 capture 拦截 stopPropagation 且绝不 preventDefault，保页面原生滚动。
 - **exhaustive-deps 豁免**：`qualityStamp` 是 sources excluded 状态的指纹，代替整对象身份；`shareTarget` 的依赖列表逐一枚举其输入。动这些代码前先理解为何豁免。
+- **Tailwind 与残余 CSS 层叠**（ADR-0005）：样式在 JSX 工具类 + `src/style.css` 残余层。两条铁律：一，**禁止用工具类覆盖 antd 组件内部样式**——antd 运行时注入的 `.anticon{color:inherit}` 等无层规则恒胜层内工具类，需要覆盖 .ant-* 时写进残余层；二，`@import "tailwindcss/..."` 必须保持字符串形式，stylelint 已强制 `import-notation: "string"`——url() 记法会让 Tailwind 解析器静默不展开，产物里零工具类。
+- **E2E 锚点类**：`budget-note`、`chart-legend`、`compare-facts`、`compare-selector`、`configuration-evidence`、`evidence-badges`、`leader-row`、`model-link`、`preset-cards`、`ranking-intro`、`ranking-main-table`、`ranking-table`、`scoring-context`、`source-card` 等类名被三套 E2E 的 `locator()` 直接引用，重构样式时必须原样保留（可与工具类共存）。
 
 ## 约定
 

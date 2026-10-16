@@ -42,6 +42,16 @@ const LEGEND = [
   ["全球前沿", "global"],
   ["开放权重前沿", "frontier"],
 ];
+// 图例标记样式查找表：原 .legend-marker 及 .open/.closed/.global/.frontier 变体内联
+const LEGEND_MARKERS = {
+  open: "relative inline-block mx-[1px] h-[8px] w-[8px] shrink-0 rotate-45 bg-[#128574]",
+  closed:
+    "relative inline-block h-[10px] w-[10px] shrink-0 rounded-full bg-[#a4b6c6]",
+  global:
+    "relative inline-block h-0 w-[19px] shrink-0 [border-top:2px_dashed_#8398ad]",
+  frontier:
+    "relative inline-block h-0 w-[19px] shrink-0 [border-top:2px_solid_#128574]",
+};
 export default function Chart({
   rows,
   focus,
@@ -176,10 +186,10 @@ export default function Chart({
             const dollars = ["aa", "vals", "livebench"]
               .map(
                 (s) =>
-                  `<div class="tip-cost-row"><span>${esc(NAMES[s])}</span><b>${money(r.representatives[s]?.costTask)}</b></div>`,
+                  `<div class="flex justify-between py-[4px] text-[11px] text-[#8295a2]"><span>${esc(NAMES[s])}</span><b class="font-medium tabular-nums text-[#4b6573]">${money(r.representatives[s]?.costTask)}</b></div>`,
               )
               .join("");
-            return `<div class="tip-head"><div class="tip-eyebrow">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong>${esc(r.name)}</strong><span>${esc(r.creator)}</span></div><div class="tip-metrics"><div><small>综合能力</small><b>${r.composite.toFixed(1)}<em> / 100</em></b></div><div><small>${isRelative ? "相对基准成本" : "每次任务成本"}</small><b>${costFormat(r.cost, costSource)}</b></div></div><div class="tip-dollar"><div class="tip-section-label">三站真实任务成本 · USD</div>${dollars}</div><div class="tip-foot"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong>${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small>点击模型查看配置与原始数据</small></div>`;
+            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-[760px]:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">综合能力</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-[760px]:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> / 100</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-[760px]:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div><div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
           },
         },
         legend: {
@@ -359,18 +369,21 @@ export default function Chart({
   };
   return (
     <div ref={container} className="chart-stage">
-      <div className="chart-toolbar">
+      <div className="flex items-center justify-between gap-[12px] pt-[8px] pb-[5px] max-[1180px]:flex-wrap max-[1180px]:gap-[5px] max-[760px]:gap-[8px] max-[760px]:px-[3px] max-[760px]:pt-[9px]">
         <div className="chart-legend">
           {LEGEND.map(([name, kind]) => (
             <button
               key={name}
-              className={visibility[name] === false ? "inactive" : ""}
+              className={
+                "flex items-center gap-[7px] border-0 bg-transparent px-0 py-[4px] cursor-pointer text-[10px] text-[#6c8291] whitespace-nowrap max-[760px]:text-[9px] " +
+                (visibility[name] === false ? "opacity-[0.35]" : "")
+              }
               aria-pressed={visibility[name] !== false}
               onClick={() =>
                 setVisibility((v) => ({ ...v, [name]: v[name] === false }))
               }
             >
-              <span className={"legend-marker " + kind} aria-hidden="true" />
+              <span className={LEGEND_MARKERS[kind]} aria-hidden="true" />
               {name}
             </button>
           ))}
@@ -428,35 +441,43 @@ export default function Chart({
       <div className="plot-frame">
         <div
           ref={element}
-          className="chart"
+          className="chart h-[448px] w-full overflow-hidden min-[1600px]:h-[490px] max-[1180px]:h-[465px] max-[760px]:h-[420px] [.chart-stage:fullscreen_&]:h-full [.chart-stage:fullscreen_&]:min-h-0"
           role="img"
           aria-label="综合能力与任务成本交互图"
         />
       </div>
       {costSource === "composite" && (
         <div className="cost-reference">
-          <div className="reference-label">
-            <InfoCircleOutlined aria-hidden="true" />
-            <span>
+          <div className="flex flex-row items-center justify-start gap-[8px] min-w-0 text-[#7c9b90] max-[1180px]:col-span-full">
+            <InfoCircleOutlined aria-hidden="true" className="text-[15px]" />
+            <span className="text-[11px] text-[#557e70] max-[760px]:text-[10px]">
               1 倍成本基准
-              <small>
+              <small className="block text-[9px] text-[#92a69e] mt-[5px] whitespace-nowrap max-[1180px]:inline max-[1180px]:ml-[8px] max-[760px]:text-[8px] max-[760px]:ml-[7px]">
                 {costProfile?.sources?.length ?? 3} 源共同样本中位数
               </small>
             </span>
           </div>
           {["aa", "vals", "livebench"].map((source) => (
-            <div key={source}>
-              <span>{NAMES[source]}</span>
-              <strong>
+            <div
+              key={source}
+              className="flex flex-col justify-center gap-[5px] min-w-0 border-l border-l-[#e5edeb] pl-[17px] max-[1180px]:[&:nth-child(2)]:border-l-0 max-[1180px]:[&:nth-child(2)]:pl-0 max-[760px]:pl-[10px]"
+            >
+              <span className="text-[10px] text-[#7d918a] max-[760px]:text-[8px]">
+                {NAMES[source]}
+              </span>
+              <strong className="text-[13px] font-[550] tabular-nums text-[#3e665b] max-[760px]:text-[11px]">
                 {money(costProfile?.medians[source])}
-                <small> / 任务</small>
+                <small className="text-[9px] font-normal text-[#9aaba5] max-[760px]:text-[8px]">
+                  {" "}
+                  / 任务
+                </small>
               </strong>
             </div>
           ))}
         </div>
       )}
-      <div className="chart-interaction-note">
-        <DragOutlined aria-hidden="true" />
+      <div className="flex items-center justify-center gap-[7px] text-[9px] text-[#9aabb5] mt-[12px] leading-[1.7] max-[760px]:text-[8px] max-[760px]:gap-[5px] max-[760px]:mt-[11px] max-[760px]:mx-[4px] max-[760px]:leading-[1.8]">
+        <DragOutlined aria-hidden="true" className="text-[12px]" />
         <span>
           左上方更优。阴影区域内的模型都被标注的前沿模型同时以更低成本、更高综合分支配；拖动平移，按钮或滑块缩放，滚轮用于页面滚动
         </span>
