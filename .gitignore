@@ -1,0 +1,9 @@
+node_modules/
+dist/
+test-artifacts/
+work/
+data/*.tmp*
+data/arena-browser/
+.DS_Store
+.eslintcache
+coverage/
