@@ -20,3 +20,28 @@ jobs:
       - run: npm run format:check
       - run: npm run test:coverage
       - run: npm run build
+      # 三套 E2E 是行为门禁（图表交互、门户六页、证据与历史流），必须在构建产物上跑：
+      # 测试以 channel: "chrome" 启动真实 Chrome，并请求运行中的生产服务。
+      - name: 启动生产服务
+        run: |
+          npm start &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4317/api/status > /dev/null && exit 0
+            sleep 1
+          done
+          echo "服务 30 秒内未就绪"
+          exit 1
+      - name: E2E：前沿探索
+        run: npm run test:e2e
+      - name: E2E：门户六页
+        run: npm run test:portal
+      - name: E2E：证据与历史
+        run: npm run test:evidence
+      # 失败现场（截图）随产物上传，便于直接定位，不进仓库
+      - name: 上传失败现场
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: test-artifacts/
+          if-no-files-found: ignore
