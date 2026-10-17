@@ -547,8 +547,8 @@
       "notes": [
         "Cost / Test 只代表 Vals 的任务与执行协议，不等于生产调用预算。"
       ],
-      "fetchedAt": "2026-10-17T06:26:55.022Z",
-      "attemptedAt": "2026-10-17T06:26:53.809Z",
+      "fetchedAt": "2026-10-17T06:54:36.184Z",
+      "attemptedAt": "2026-10-17T06:54:33.147Z",
       "error": null,
       "stale": false
     },
@@ -11120,8 +11120,8 @@
         "源站页面 manifest 指向的加密数据文件；保留完整精度、历史条目、估算标记和推理档位。",
         "开放权重、历史与估算状态均取自源站字段，不按模型名推测。"
       ],
-      "fetchedAt": "2026-10-17T06:27:10.344Z",
-      "attemptedAt": "2026-10-17T06:26:53.792Z",
+      "fetchedAt": "2026-10-17T06:54:54.801Z",
+      "attemptedAt": "2026-10-17T06:54:33.140Z",
       "error": null,
       "stale": false
     },
@@ -12189,8 +12189,8 @@
       ],
       "sourceDate": "2026-10-14",
       "releaseKey": "2026-09-02",
-      "fetchedAt": "2026-10-17T06:26:56.555Z",
-      "attemptedAt": "2026-10-17T06:26:53.810Z",
+      "fetchedAt": "2026-10-17T06:54:36.201Z",
+      "attemptedAt": "2026-10-17T06:54:33.147Z",
       "error": null,
       "stale": false
     }
@@ -12198,5 +12198,5 @@
   "settings": {
     "refreshHours": 24
   },
-  "lastRefresh": "2026-10-17T06:27:10.344Z"
+  "lastRefresh": "2026-10-17T06:54:54.801Z"
 }
