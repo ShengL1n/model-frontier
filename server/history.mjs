@@ -89,7 +89,7 @@ export function diffSnapshots(before, after) {
         source,
         modelId: familyKey(row.name),
         name: row.name,
-        type: !old ? "added" : !next ? "removed" : "updated",
+        type: changeType(old, next),
         fields,
         before: old,
         after: next,
@@ -98,6 +98,13 @@ export function diffSnapshots(before, after) {
   }
   return items;
 }
+// old 缺失 = 新增，next 缺失 = 移除，两者都在 = 更新。抽成具名函数避免三层三元叠在
+// 字面量里，也让「变更类型」这个概念有名字可引。
+const changeType = (old, next) => {
+  if (!old) return "added";
+  if (!next) return "removed";
+  return "updated";
+};
 const counts = (items) => ({
   added: items.filter((i) => i.type === "added").length,
   removed: items.filter((i) => i.type === "removed").length,
@@ -253,17 +260,17 @@ export function createHistoryStore(
               })),
           )
         : [];
+    // items 先兜底为空数组，visibleItems 再按 modelId 过滤：避免 selected / modelId 两层
+    // 三元叠在返回值里（selected 为空时原逻辑也不会取到 items，行为不变）
+    const items = selected?.items ?? [];
+    const visibleItems = modelId
+      ? items.filter((i) => i.modelId === modelId)
+      : items;
     return {
       ...summary(),
-      records: [...history.records].reverse().map((r) => brief(r, modelId)),
+      records: [...history.records].toReversed().map((r) => brief(r, modelId)),
       selected: selected
-        ? {
-            ...brief(selected, modelId),
-            items: modelId
-              ? selected.items.filter((i) => i.modelId === modelId)
-              : selected.items,
-            observations,
-          }
+        ? { ...brief(selected, modelId), items: visibleItems, observations }
         : null,
     };
   }

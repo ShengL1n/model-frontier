@@ -7,3 +7,5 @@ data/arena-browser/
 .DS_Store
 .eslintcache
 coverage/
+# 早前 pnpm 实验残留；本项目用 npm（package-lock.json），见 docs/handoff.md 待办
+pnpm-lock.yaml

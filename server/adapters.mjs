@@ -26,15 +26,25 @@ const number = (s) => {
 };
 const prices = (s) =>
   [...String(s).matchAll(/\$([\d.]+)/g)].map((m) => Number(m[1]));
-export async function getText(url, timeout = 30000) {
+// 三站抓取共用：超时、明确的身份声明、HTTP 状态检查。getText / getBuffer 原本各写一份
+// fetch，只差 Accept，收敛到一处，少一处会漂移的重复。
+async function requestSource(url, timeout = 30000, accept = "*/*") {
   const response = await fetch(url, {
     signal: AbortSignal.timeout(timeout),
     headers: {
       "User-Agent": "ModelFrontier/1.0 (personal local leaderboard reader)",
-      Accept: "text/html,application/json,text/csv,*/*",
+      Accept: accept,
     },
   });
   if (!response.ok) throw new Error(`源站返回 HTTP ${response.status}`);
+  return response;
+}
+export async function getText(url, timeout = 30000) {
+  const response = await requestSource(
+    url,
+    timeout,
+    "text/html,application/json,text/csv,*/*",
+  );
   return response.text();
 }
 // AA 的全量模型不再随页面下发，改为放在 manifest 指向的加密文件里：AES-256-GCM 加密后
@@ -170,8 +180,18 @@ export function parseVals(html) {
     notes: ["Cost / Test 只代表 Vals 的任务与执行协议，不等于生产调用预算。"],
   };
 }
+// LiveBench 元数据只取这四个键。正则预编译一次：既免去每条模型解析都重编一遍，也去掉
+// 动态构造的正则（键虽是本文件内的固定字面量，仍不该留给 detect-non-literal-regexp 告警）。
+const LB_SCALAR_RE = {
+  displayName: /(?:^|,)displayName:"([^"]*)"/,
+  organization: /(?:^|,)organization:"([^"]*)"/,
+  effort: /(?:^|,)effort:"([^"]*)"/,
+  url: /(?:^|,)url:"([^"]*)"/,
+};
 function scalar(body, key) {
-  return body.match(new RegExp(`(?:^|,)${key}:"([^"]*)"`))?.[1] ?? null;
+  const re = LB_SCALAR_RE[key];
+  // 键不在表内时返回 null：不能让它变成 match(undefined) 而命中整个 body
+  return re ? (body.match(re)?.[1] ?? null) : null;
 }
 export function lbMetadata(js) {
   const metadata = {};
@@ -275,7 +295,7 @@ export async function fetchLivebench() {
     ),
   ]
     .sort()
-    .reverse()
+    .toReversed()
     .slice(0, 18);
   for (const date of dates) {
     let csv;
@@ -301,14 +321,7 @@ export async function fetchLivebench() {
   throw new Error("LiveBench 发布文件未找到；保留上次数据");
 }
 async function getBuffer(url, timeout = 30000) {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(timeout),
-    headers: {
-      "User-Agent": "ModelFrontier/1.0 (personal local leaderboard reader)",
-      Accept: "*/*",
-    },
-  });
-  if (!response.ok) throw new Error(`源站返回 HTTP ${response.status}`);
+  const response = await requestSource(url, timeout);
   return Buffer.from(await response.arrayBuffer());
 }
 async function fetchAA() {
