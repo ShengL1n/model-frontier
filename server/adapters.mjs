@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
 import { parse } from "csv-parse/sync";
+import { gunzipSync } from "node:zlib";
 export const SOURCE_INFO = {
   aa: {
     name: "Artificial Analysis",
@@ -36,45 +37,64 @@ export async function getText(url, timeout = 30000) {
   if (!response.ok) throw new Error(`源站返回 HTTP ${response.status}`);
   return response.text();
 }
-function findModels(o) {
-  if (!o || typeof o !== "object") return null;
-  if (
-    Array.isArray(o.models) &&
-    o.models.some((m) => typeof m.isOpenWeights === "boolean")
-  )
-    return o.models;
-  for (const x of Object.values(o)) {
-    const found = findModels(x);
-    if (found) return found;
-  }
-  return null;
+// AA 的全量模型不再随页面下发，改为放在 manifest 指向的加密文件里：AES-256-GCM 加密后
+// gzip 的 JSON。密钥写在同一个 Flight 分片中，IV 取 SHA-256(key) 前 12 字节，认证标签 128 位。
+// 见 docs/adr/0006。 Flight 分片是 JS 字符串字面量，引号在原始 HTML 里呈转义形态。
+const MANIFEST_RE =
+  /manifest\\?":\{\\?"path\\?":\\?"([^"\\]+)\\?",\\?"key\\?":\\?"([0-9a-fA-F]+)\\?"\}/;
+const AA_MIN_ROWS = 100;
+const AA_OPEN_FLAG_RATIO = 0.9;
+export function aaManifest(html) {
+  const m = MANIFEST_RE.exec(String(html));
+  if (!m) throw new Error("AA 页面结构变化：找不到数据清单 manifest");
+  return { path: m[1], key: m[2] };
 }
-export function parseAA(html) {
-  const $ = cheerio.load(html);
-  let flight = "";
-  $("script").each((_, el) => {
-    const s = $(el).html() ?? "";
-    if (s.startsWith("self.__next_f.push(")) {
-      try {
-        const a = JSON.parse(s.slice("self.__next_f.push(".length, -1));
-        if (typeof a[1] === "string") flight += a[1];
-      } catch {
-        /* unrelated Flight chunks */
-      }
-    }
-  });
-  let models;
-  for (const line of flight.split("\n")) {
-    try {
-      models = findModels(JSON.parse(line.slice(line.indexOf(":") + 1)));
-    } catch {
-      /* non-JSON Flight records */
-    }
-    if (models) break;
+export async function decryptAAGzip(buffer, keyHex) {
+  const key = Buffer.from(keyHex, "hex");
+  if (key.length !== 32) throw new Error("AA 数据密钥长度异常");
+  const iv = new Uint8Array(await crypto.subtle.digest("SHA-256", key)).slice(
+    0,
+    12,
+  );
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    key,
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"],
+  );
+  let packed;
+  try {
+    packed = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv, tagLength: 128 },
+      cryptoKey,
+      buffer,
+    );
+  } catch {
+    throw new Error("AA 数据解密失败：加密方案可能已变更");
   }
-  if (!models)
-    throw new Error("AA 页面结构变化：找不到含开放权重元数据的模型数据");
-  const rows = models
+  try {
+    return JSON.parse(gunzipSync(packed).toString("utf8"));
+  } catch {
+    throw new Error("AA 数据解压或解析失败");
+  }
+}
+export function parseAA(models) {
+  if (!Array.isArray(models))
+    throw new Error("AA 数据格式变化：模型列表不是数组");
+  if (models.length < AA_MIN_ROWS)
+    throw new Error(
+      `AA 数据不完整：仅解析到 ${models.length} 条，低于 ${AA_MIN_ROWS} 条下限`,
+    );
+  // 开放权重缺失时不能放行：全表会安静退化成「开放状态未知」，比报错更糟。
+  // 分母取可评估的对象行数，否则载荷里混进 null 会把「全都有标记」误判成缺失。
+  const objects = models.filter((m) => m && typeof m === "object");
+  const flagged = objects.filter(
+    (m) => typeof m.isOpenWeights === "boolean",
+  ).length;
+  if (flagged < objects.length * AA_OPEN_FLAG_RATIO)
+    throw new Error("AA 数据缺少开放权重元数据，拒绝替换缓存");
+  const rows = objects
     .filter((m) => typeof m.name === "string")
     .map((m) => ({
       name: m.shortName ?? m.name,
@@ -105,7 +125,8 @@ export function parseAA(html) {
     rows,
     sourceDate: null,
     notes: [
-      "源站页面内嵌结构化数据；保留完整精度、历史条目、估算标记和推理档位。",
+      "源站页面 manifest 指向的加密数据文件；保留完整精度、历史条目、估算标记和推理档位。",
+      "开放权重、历史与估算状态均取自源站字段，不按模型名推测。",
     ],
   };
 }
@@ -279,8 +300,29 @@ export async function fetchLivebench() {
   }
   throw new Error("LiveBench 发布文件未找到；保留上次数据");
 }
+async function getBuffer(url, timeout = 30000) {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(timeout),
+    headers: {
+      "User-Agent": "ModelFrontier/1.0 (personal local leaderboard reader)",
+      Accept: "*/*",
+    },
+  });
+  if (!response.ok) throw new Error(`源站返回 HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+async function fetchAA() {
+  const html = await getText(SOURCE_INFO.aa.url);
+  const { path, key } = aaManifest(html);
+  return parseAA(
+    await decryptAAGzip(
+      await getBuffer(new URL(path, SOURCE_INFO.aa.url)),
+      key,
+    ),
+  );
+}
 export const FETCHERS = {
-  aa: async () => parseAA(await getText(SOURCE_INFO.aa.url)),
+  aa: fetchAA,
   vals: async () => parseVals(await getText(SOURCE_INFO.vals.url)),
   livebench: fetchLivebench,
 };

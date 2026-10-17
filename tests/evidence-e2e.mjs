@@ -14,11 +14,19 @@ const overflow = async () => {
     () => document.documentElement.scrollWidth <= innerWidth,
   );
 };
+// 刷新间隔是使用者的设置，本套只要求它处于已知值，因此自己设定、结束时还原，
+// 不依赖本机 data/ 里恰好存着什么——否则换台机器或改过设置就会莫名红掉。
+let previousHours = 1;
 try {
   await mkdir("test-artifacts", { recursive: true });
   const real = await (await page.request.get(base + "/api/data")).json();
   assert.ok(real.history.recordCount >= 1);
-  assert.equal(real.settings.refreshHours, 1);
+  previousHours = real.settings.refreshHours;
+  const applied = await page.request.put(base + "/api/settings", {
+    data: { refreshHours: 1 },
+  });
+  assert.equal(applied.status(), 200);
+  assert.equal((await applied.json()).refreshHours, 1);
   await page.goto(base + "/#overview");
   await page
     .getByRole("heading", { name: "真实变化记录", exact: true })
@@ -161,5 +169,11 @@ try {
   });
   throw e;
 } finally {
+  if (previousHours !== 1)
+    await page.request
+      .put(base + "/api/settings", {
+        data: { refreshHours: previousHours },
+      })
+      .catch(() => {});
   await browser.close();
 }

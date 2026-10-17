@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -77,5 +77,26 @@ test("invalid source updates are rejected and automatic refresh may be disabled"
   await store.setRefreshHours(0);
   assert.equal(store.refreshDue(), false);
   await assert.rejects(() => store.setRefreshHours(7));
-  await rm(directory, { recursive: true, force: true });
 });
+test("a suspicious collapse in row count is rejected instead of silently replacing the cache", async () => {
+  const rows = Array.from({ length: 240 }, (_, i) => ({
+    name: "Model " + i,
+    score: i,
+  }));
+  await store.refreshAll({ aa: async () => ({ rows }) });
+  assert.equal(store.view().sources.aa.count, 240);
+  // 源站只下发部分数据时格式完全合法，必须按上次成功缓存比对后拒绝
+  await store.refreshAll({ aa: async () => ({ rows: rows.slice(0, 100) }) });
+  assert.equal(store.view().sources.aa.count, 240);
+  assert.match(store.view().sources.aa.error, /疑似不完整/);
+  assert.equal(store.view().sources.aa.stale, true);
+  // 正常幅度的波动仍然接受
+  await store.refreshAll({ aa: async () => ({ rows: rows.slice(0, 200) }) });
+  assert.equal(store.view().sources.aa.count, 200);
+  assert.equal(store.view().sources.aa.error, null);
+  // 小体量来源不受该闸门影响
+  await store.refreshAll({ vals: async () => ({ rows: rows.slice(0, 40) }) });
+  assert.equal(store.view().sources.vals.count, 40);
+  assert.equal(store.view().sources.vals.error, null);
+});
+after(() => rm(directory, { recursive: true, force: true }));
