@@ -14,7 +14,7 @@
 npm ci                # 安装依赖
 npm run dev           # 开发模式（127.0.0.1:4317）
 npm run build && npm start   # 生产模式（同一端口，二选一）
-npm test              # 76 个单元测试（node --test）
+npm test              # 81 个单元测试（node --test）
 npm run test:coverage # 单测 + 覆盖率门禁（行 92 / 分支 85 / 函数 90）
 npm run test:e2e && npm run test:portal && npm run test:evidence  # 三套 E2E（需服务已运行，本机 Chrome）
 npm run lint          # ESLint（--max-warnings 0）
