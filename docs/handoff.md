@@ -4,10 +4,16 @@
 
 ## 当前状态
 
-- 本地工作区干净，仅剩未跟踪的 `pnpm-lock.yaml`（早前 pnpm 实验残留，项目用 npm，见文末待办）；`dist/` 为最近一次 `npm run build` 产物，服务（`npm start`，4317 端口）运行中。
-- 全量门禁绿：81 单测、覆盖率 94.96 / 88.67 / 94.67（门禁 92 / 85 / 90）、ESLint、Prettier、stylelint、三套 E2E（`test:e2e` / `test:portal` / `test:evidence`）。
+- 本地工作区干净；`dist/` 为最近一次 `npm run build` 产物，服务（`npm start`，4317 端口）运行中。
+- 全量门禁绿：81 单测、覆盖率 94.99 / 88.72 / 94.69（门禁 92 / 85 / 90）、ESLint、Prettier、stylelint、三套 E2E（`test:e2e` / `test:portal` / `test:evidence`）。
 - **AA 摄取已修复并真实刷新成功**：`data/snapshot.json` 落库 AA 704 行（379 开放权重 / 431 历史 / 473 估算 / 196 条含成本），三站均 `error: null`。
 - 数据由服务端定时刷新写入 `data/snapshot.json` / `data/history.json`；这类例行刷新按既有约定单独以 `chore:` 提交。
+
+## 上一轮清理（承接后可选阅读）
+
+AA 修复交付后又做了一轮针对性清理，均已验证：`getText` / `getBuffer` 两份重复的 fetch 收敛为共用的 `requestSource`（只差 `Accept`，按各自原值参数化，行为零变化）；`lbMetadata` 的四个键改用预编译正则表，既免去每条模型解析都重编正则，也去掉动态构造正则的告警；`fetchLivebench` 与 `history.mjs` 的 `.reverse()` 改 `.toReversed()`（Node ≥ 20，项目要求 ≥ 22.12）；`history.mjs` 两处嵌套三元分别提取为 `view()` 里的 `items` / `visibleItems` 与 `diffSnapshots` 用的具名 `changeType(old, next)`；`pnpm-lock.yaml` 加入 `.gitignore`（项目用 npm，该文件是 pnpm 实验残留）。清理后 `server/adapters.mjs`、`server/history.mjs`、`server/store.mjs` 三个文件零诊断。
+
+**未做**：全院约 40 处 `nested-ternary-js` 与 `no-console-except-error-js` / `hardcoded-url-js` 告警。前者遍布 `src/*.jsx` 与 `src/analysis.mjs`（评分代码，嵌套三元是承重逻辑），纯风格重写、零功能收益且回归风险高；后两者分别是服务启动横幅 / CLI 输出与「只监听 127.0.0.1:4317」的既定设计，均非缺陷。这些规则也不在仓库门禁内（`npm run lint` 是 ESLint）。
 
 ## 本次交付内容
 
@@ -53,6 +59,7 @@ npm run test:e2e && npm run test:portal && npm run test:evidence
 - **官方免费 API 的 1 位小数是服务端行为**，不是显示层四舍五入，客户端无法恢复精度。
 - **AA 单站耗时几乎全是网络**：本地实测三轮，页面约 5–9 秒、数据文件（约 140 KB）约 8–12 秒，而解密 + gunzip + 解析合计仅约 25 毫秒。ADR 里若再出现「0.3–0.7 秒」一类数字，那是只量了本地计算，属失实。
 - **开放权重闸门的分母是可评估的对象行数**，不是 `models.length`：否则载荷里混进 `null` 会把「全都有标记」误判成缺失，报错信息也会指错方向。
+- **三站抓取统一走 `requestSource`**：`getText` / `getBuffer` 只差 `Accept`（前者按原值传 `text/html,application/json,text/csv,*/*`，后者用默认 `*/*`），改抓取行为只改这一处。`lbMetadata` 的 `scalar` 查预编译正则表 `LB_SCALAR_RE`，**未登记的键返回 null**——不要图省事改成 `match(undefined)`，那会命中整个 body。
 - **`parseAA` 的行过滤必须防非对象条目**：`null.name` 会抛 TypeError，该函数上方闸门本就写了 `m && typeof m === "object"`，两处标准要一致。
 
 ## 实现要点与坑（改 `src/Chart.jsx` 前必读）
@@ -65,11 +72,10 @@ npm run test:e2e && npm run test:portal && npm run test:evidence
 
 ## 待办与已知取舍
 
-- **`pnpm-lock.yaml`（未跟踪）**：本项目用 npm（`package-lock.json`），该文件是早前 pnpm 实验残留，未提交。确认无用后可删除或加入 `.gitignore`。
 - **跌幅闸门无人工 override**：若 AA 合法地永久缩水（有效分从 ≥200 条掉到不足一半），闸门会一直拒收并把源站标 stale，只能人工介入。这是刻意的 fail-safe 取舍（宪法诚实性优先：宁可显式报错，不静默少数据），加 override 属新功能，未做。
 - **AA 的 `sourceDate` 仍为 `null`**：官方免费 API 的 `intelligence_index_version`（实测 4.3）在 manifest 载荷里没有对应字段，页面「数据时间」对这一栏继续不可用。
 - **Pro 档升级路径**：若升级，可把官方 `/api/v2/language/models` 提为首选源、manifest 端点降级为兜底；届时需另立 ADR，因为免费档字段缺口正是本次不选它的原因。
-- **既有 lint 告警未清理**（均在本次改动范围外，pi-lens 报出但非仓库门禁）：`server/adapters.mjs` 的 `scalar()` 用 `new RegExp` 动态构造正则（Semgrep 潜在 ReDoS，输入是抓来的页面文本，实际风险低）；`fetchLivebench` 的 `.reverse()`（ast-grep 告警实为误报——作用在 `[...new Set()]` 新数组上，不污染共享状态）。
+- **既有 lint 告警已清理**（承接时登记的两条）：`scalar()` 的动态正则改为预编译正则表、`fetchLivebench` 的 `.reverse()` 改 `.toReversed()`。全院剩余的 `nested-ternary-js` / `no-console-except-error-js` / `hardcoded-url-js` 见上一节「未做」的说明，均非缺陷且不在仓库门禁内。
 - **诊断噪声**：pi-lens 的嵌套三元（`nested-ternary-js`，全院既有风格）、antd 弃用提示为既有；knip 的「Unused export」是误报（项目未装 knip，`fetchAA` 根本没导出，`aaManifest` / `decryptAAGzip` 被 `fetchAA` 与测试引用）。
 - **chip 计数口径**：取当前视图完整行池（与厂商下拉选项池一致），不被搜索 / 开放状态裁剪；因此在「仅开放权重」等筛选下可能出现 chip 计数大于可见行数——与既有下拉行为相同，属既定取舍。
 - **斩杀区在口径切换后不自动重绘**：切成本口径 / 图例 / 聚焦会整表重建并抹掉区域，需移动鼠标才会重新出现（tooltip 同样等到下次移动才刷新，行为一致）。
