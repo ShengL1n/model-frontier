@@ -1045,10 +1045,9 @@ function App() {
                   </div>
                   <Segmented
                     aria-label="模型范围"
-                    value={focus}
+                    value={focus === "openOnly" ? "openOnly" : "all"}
                     onChange={setFocus}
                     options={[
-                      { label: "开放优先", value: "openFirst" },
                       { label: "全部模型", value: "all" },
                       { label: "仅开放权重", value: "openOnly" },
                     ]}
@@ -1091,6 +1090,15 @@ function App() {
                   </p>
                 </div>
                 <div className="table-filters flex items-center gap-[13px] max-1180:w-full max-760:flex-wrap max-760:gap-[10px]">
+                  <Checkbox
+                    checked={focus === "openFirst"}
+                    disabled={focus === "openOnly"}
+                    onChange={(e) =>
+                      setFocus(e.target.checked ? "openFirst" : "all")
+                    }
+                  >
+                    开放优先排序
+                  </Checkbox>
                   <Checkbox
                     checked={onlyFront}
                     onChange={(e) => setOnlyFront(e.target.checked)}

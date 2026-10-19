@@ -51,6 +51,43 @@ try {
   await page.getByRole("tab", { name: "前沿探索", exact: true }).click();
   await page.getByRole("heading", { name: "综合能力 / 成本前沿" }).waitFor();
   await page.locator("canvas").waitFor();
+  const range = page.getByRole("radiogroup", { name: "模型范围" });
+  assert.equal(await range.getByText("开放优先", { exact: true }).count(), 0);
+  const openSort = page.getByRole("checkbox", { name: "开放优先排序" });
+  assert.equal(await openSort.isChecked(), true);
+  assert.equal(
+    await page
+      .locator(".chart-legend")
+      .getByRole("button", { name: "开放权重前沿", exact: true })
+      .count(),
+    0,
+  );
+  await openSort.uncheck();
+  assert.equal(
+    await range
+      .getByRole("radio", { name: "全部模型", exact: true })
+      .isChecked(),
+    true,
+  );
+  await range.getByText("仅开放权重", { exact: true }).click();
+  assert.equal(await openSort.isDisabled(), true);
+  assert.equal(
+    await page
+      .locator(".chart-legend")
+      .getByRole("button", { name: "开放权重前沿", exact: true })
+      .count(),
+    1,
+  );
+  assert.equal(
+    await page
+      .locator(".chart-legend")
+      .getByRole("button", { name: "全球前沿", exact: true })
+      .count(),
+    0,
+  );
+  await range.getByText("全部模型", { exact: true }).click();
+  assert.equal(await openSort.isEnabled(), true);
+  await openSort.check();
   await page
     .getByText("综合相对成本（基准 1 倍）", { exact: true })
     .first()

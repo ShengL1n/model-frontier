@@ -141,7 +141,11 @@ export default function Chart({
     // 移到画布空白处若没有 mousemove 事件兜底，由 mouseout 延迟撤下；
     // 60ms 窗口留给紧随新点的 mousemove 取消。
     chart.on("mousemove", (p) =>
-      paintZone(p.data?.row?.frontier ? p.data.row : null),
+      paintZone(
+        !zoneContext.current?.openOnly && p.data?.row?.frontier
+          ? p.data.row
+          : null,
+      ),
     );
     chart.on("mouseout", () => {
       clearTimeout(retract);
@@ -174,7 +178,7 @@ export default function Chart({
     const axisMax = plot.length
       ? Math.max(...plot.map((r) => r.cost)) * 1.4
       : 100;
-    zoneContext.current = { plot, axisMax };
+    zoneContext.current = { plot, axisMax, openOnly: focus === "openOnly" };
     paintedZone.current = null;
     const point = (r) => ({
       id: r.id,
@@ -347,12 +351,17 @@ export default function Chart({
         series: [
           line(
             "全球前沿",
-            (r) => r.frontier,
+            (r) => focus !== "openOnly" && r.frontier,
             "#3267b8",
             true,
             "global-frontier",
           ),
-          line("开放权重前沿", (r) => r.openFrontier, "#128574", false),
+          line(
+            "开放权重前沿",
+            (r) => focus === "openOnly" && r.openFrontier,
+            "#128574",
+            false,
+          ),
           {
             name: "闭源 / 未确认",
             type: "scatter",
@@ -421,7 +430,11 @@ export default function Chart({
     <div ref={container} className="chart-stage">
       <div className="flex items-center justify-between gap-[12px] pt-[8px] pb-[5px] max-1180:flex-wrap max-1180:gap-[5px] max-760:gap-[8px] max-760:px-[3px] max-760:pt-[9px]">
         <div className="chart-legend">
-          {LEGEND.map(([name, kind]) => (
+          {LEGEND.filter(([, kind]) =>
+            focus === "openOnly"
+              ? kind === "open" || kind === "frontier"
+              : kind !== "frontier",
+          ).map(([name, kind]) => (
             <button
               key={name}
               className={
