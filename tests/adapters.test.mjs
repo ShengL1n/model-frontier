@@ -169,6 +169,154 @@ test("LiveBench correctly distinguishes cost per task from successful-task cost"
   assert.equal(r.openWeights, true);
   assert.equal(r.name, "New 99");
 });
+// LiveBench 摄取编排：v1 发布文件在 /v1/table_<日期>.csv，v2 在
+// /data/<紧凑日期>/table.csv；站点对未命中路径可能返回 SPA 壳（HTTP 200 + HTML），
+// 表头校验是唯一拦网。布局与双形态 id 的来历见 docs/adr/0008。
+const LB_HOME =
+  '<html><head><script src="/static/js/main.test.js"></script></head></html>';
+const LB_JS = [
+  'const _e=["20261014"];',
+  'const Me=e=>e.slice(0,4)+"-"+e.slice(4,6)+"-"+e.slice(6,8);',
+  'const Oe=[...["2024-06-24","2026-06-25"].map((e=>({id:e,label:e,gen:"v1"}))),..._e.map((e=>({id:e,label:Me(e),gen:"v2"})))];',
+  'const meta={"new-99":{url:"https://example.com",organization:"New",displayName:"New 99",effort:"max",openweight:!0}};',
+].join("\n");
+const LB_TABLE = "model,coding,reasoning\nnew-99,50,100\n";
+const LB_COST =
+  "model,coding,nq_coding,reasoning,nq_reasoning,input_price_per_million,output_price_per_million\nnew-99,20,10,10,20,1,2\n";
+const LB_SPA = "<!doctype html><title>livebench.ai</title>";
+// routes 登记 pathname → 响应体；未登记的路径一律 404（源站对缺失文件的行为）。
+// getText 只接受 2xx，404 即抛错被摄取层捕获后继续探测下一个布局。
+function serveLivebench(routes) {
+  const seen = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(
+      typeof input === "string" ? input : String(input?.url ?? input),
+    );
+    seen.push(url.pathname);
+    const hit = routes[url.pathname];
+    return hit === undefined
+      ? new Response("", { status: 404 })
+      : new Response(hit, { status: 200 });
+  };
+  return { seen, restore: () => (globalThis.fetch = original) };
+}
+test("LiveBench ingestion picks the newest release across v1/v2 id forms and layouts", async () => {
+  const { seen, restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/data/20261014/table.csv": LB_TABLE,
+    "/data/20261014/cost.csv": LB_COST,
+  });
+  try {
+    const r = await FETCHERS.livebench();
+    assert.equal(r.rows.length, 1);
+    assert.equal(r.rows[0].name, "New 99");
+    assert.equal(r.sourceDate, "2026-10-14");
+    assert.equal(r.releaseKey, "20261014");
+    assert.equal(seen[0], "/");
+    assert.ok(seen.includes("/static/js/main.test.js"));
+    // 最新发布首发命中：不再继续探测旧布局
+    assert.equal(seen.filter((p) => p.includes("table")).length, 1);
+  } finally {
+    restore();
+  }
+});
+test("LiveBench ingestion falls back from v2 layout to v1 layout for older releases", async () => {
+  const { seen, restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/v1/table_2026_06_25.csv": LB_TABLE,
+    "/v1/cost_2026_06_25.csv": LB_COST,
+  });
+  try {
+    const r = await FETCHERS.livebench();
+    assert.equal(r.sourceDate, "2026-06-25");
+    assert.equal(r.releaseKey, "2026-06-25");
+    assert.equal(r.rows[0].name, "New 99");
+    assert.ok(
+      seen.indexOf("/data/20261014/table.csv") <
+        seen.indexOf("/v1/table_2026_06_25.csv"),
+    );
+  } finally {
+    restore();
+  }
+});
+test("LiveBench ingestion still accepts the pre-migration root layout", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/table_2026_06_25.csv": LB_TABLE,
+    "/cost_2026_06_25.csv": LB_COST,
+  });
+  try {
+    const r = await FETCHERS.livebench();
+    assert.equal(r.sourceDate, "2026-06-25");
+    assert.equal(r.rows.length, 1);
+  } finally {
+    restore();
+  }
+});
+test("LiveBench ingestion rejects SPA shell responses instead of parsing them as data", async () => {
+  const { seen, restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    // v2 布局返回 200 但内容是 SPA 壳：必须跳过并落到 v1 真实数据
+    "/data/20261014/table.csv": LB_SPA,
+    "/v1/table_2026_06_25.csv": LB_TABLE,
+  });
+  try {
+    const r = await FETCHERS.livebench();
+    assert.equal(r.sourceDate, "2026-06-25");
+    assert.equal(r.rows[0].score, 75);
+    assert.ok(seen.includes("/data/20261014/table.csv"));
+  } finally {
+    restore();
+  }
+});
+test("LiveBench ingestion treats an HTML-shell cost file as missing, not as costs", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/data/20261014/table.csv": LB_TABLE,
+    "/data/20261014/cost.csv": LB_SPA,
+  });
+  try {
+    const r = await FETCHERS.livebench();
+    assert.equal(r.rows[0].costTask, null);
+    assert.equal(r.rows[0].priceInput, null);
+    assert.equal(r.rows[0].priceOutput, null);
+    assert.equal(r.rows[0].score, 75);
+  } finally {
+    restore();
+  }
+});
+test("LiveBench ingestion failures name the broken contract instead of inventing data", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+  });
+  try {
+    await assert.rejects(() => FETCHERS.livebench(), /发布文件未找到/);
+  } finally {
+    restore();
+  }
+  const noList = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": "console.log('no releases here')",
+  });
+  try {
+    await assert.rejects(() => FETCHERS.livebench(), /发布列表未找到/);
+  } finally {
+    noList.restore();
+  }
+  const noScript = serveLivebench({ "/": "<html><p>改版了</p></html>" });
+  try {
+    await assert.rejects(() => FETCHERS.livebench(), /入口脚本位置变化/);
+  } finally {
+    noScript.restore();
+  }
+});
 test("parser structure drift fails clearly instead of returning invented data", () => {
   assert.throws(() => parseVals("<h1>new</h1>"), /结构变化/);
 });
@@ -187,4 +335,20 @@ test("AA missing-value sentinels become null instead of invalid prices", () => {
   assert.equal(r.costTask, null);
   assert.equal(r.priceInput, null);
   assert.equal(r.priceOutput, null);
+});
+
+test("LiveBench retains a source release label distinct from the file key", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js":
+      LB_JS + 'const labels={"2026-06-25":"2026-06-26"};',
+    "/v1/table_2026_06_25.csv": LB_TABLE,
+  });
+  try {
+    const result = await FETCHERS.livebench();
+    assert.equal(result.releaseKey, "2026-06-25");
+    assert.equal(result.sourceDate, "2026-06-26");
+  } finally {
+    restore();
+  }
 });

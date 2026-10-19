@@ -1,63 +1,16 @@
-export const PRESETS = {
-  capability: {
-    label: "能力优先",
-    weights: { aa: 40, vals: 35, livebench: 25 },
-  },
-  equal: {
-    label: "三榜等权",
-    weights: { aa: 100 / 3, vals: 100 / 3, livebench: 100 / 3 },
-  },
-  objective: {
-    label: "任务实践优先",
-    weights: { aa: 25, vals: 40, livebench: 35 },
-  },
-  broad: { label: "广覆盖双榜", weights: { aa: 60, vals: 0, livebench: 40 } },
-};
-// Drop retired source weights, including preferences saved by earlier versions.
-export function migratePreferences(saved = {}) {
-  if (!saved || typeof saved !== "object") saved = {};
-  const preset = Object.hasOwn(PRESETS, saved.preset)
-    ? saved.preset
-    : saved.preset === "custom"
-      ? "custom"
-      : "capability";
-  const weights =
-    preset === "custom"
-      ? Object.fromEntries(
-          Object.keys(PRESETS.capability.weights).map((s) => [
-            s,
-            Number.isFinite(saved.weights?.[s])
-              ? Math.max(0, Math.min(100, saved.weights[s]))
-              : 0,
-          ]),
-        )
-      : { ...PRESETS[preset].weights };
-  const enabled = Object.values(weights).filter((v) => v > 0).length;
-  if (!enabled)
-    return {
-      ...saved,
-      preset: "capability",
-      weights: { ...PRESETS.capability.weights },
-      minSources: 2,
-    };
-  return {
-    ...saved,
-    preset,
-    weights,
-    minSources: Math.max(
-      1,
-      Math.min(
-        Number.isInteger(saved.minSources) ? saved.minSources : 2,
-        enabled,
-      ),
-    ),
-  };
-}
-export function percentile(score, pool) {
-  if (pool.length === 1) return 50;
+function percentileFraction(score, pool) {
+  if (pool.length === 1) return [50n, 1n];
   const less = pool.filter((v) => v < score).length;
   const equal = pool.filter((v) => v === score).length;
-  return (100 * (less + (equal - 1) / 2)) / (pool.length - 1);
+  return [100n * BigInt(2 * less + equal - 1), 2n * BigInt(pool.length - 1)];
+}
+export function percentile(score, pool) {
+  const [numerator, denominator] = percentileFraction(score, pool);
+  return Number(numerator) / Number(denominator);
+}
+function gcd(a, b) {
+  while (b) [a, b] = [b, a % b];
+  return a;
 }
 export function pareto(rows) {
   return rows.filter(
@@ -145,20 +98,83 @@ export function combinedCost(
     coverage: available.length,
   };
 }
+// 每榜只比较该榜原始分；同榜同分平票，缺失或被排除估算不参与。
+export function majorityMatch(left, right, { includeEstimated = false } = {}) {
+  const ballots = COST_SOURCES.map((source) => {
+    const a = left.representatives[source],
+      b = right.representatives[source];
+    const valid =
+      Number.isFinite(a?.score) &&
+      Number.isFinite(b?.score) &&
+      (includeEstimated || (!a.estimated && !b.estimated));
+    const difference = valid ? a.score - b.score : null;
+    return { source, difference, vote: valid ? Math.sign(difference) : null };
+  });
+  const leftWins = ballots.filter((b) => b.vote === 1).length;
+  const rightWins = ballots.filter((b) => b.vote === -1).length;
+  const tied = ballots.filter((b) => b.vote === 0).length;
+  const sharedSources = ballots.filter((b) => b.vote !== null).length;
+  const complete = sharedSources >= 2;
+  return {
+    ballots,
+    leftWins,
+    rightWins,
+    tied,
+    complete,
+    sharedSources,
+    result: complete ? Math.sign(leftWins - rightWins) : null,
+  };
+}
+
+function majorityRecords(models, includeEstimated) {
+  const records = new Map(
+    models.map((m) => [
+      m.id,
+      {
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        opponents: 0,
+      },
+    ]),
+  );
+  for (let i = 0; i < models.length; i++) {
+    for (let j = i + 1; j < models.length; j++) {
+      const result = majorityMatch(models[i], models[j], {
+        includeEstimated,
+      }).result;
+      if (result === null) continue;
+      const a = records.get(models[i].id),
+        b = records.get(models[j].id);
+      a.opponents++;
+      b.opponents++;
+      if (result === 0) {
+        a.draws++;
+        b.draws++;
+      } else if (result > 0) {
+        a.wins++;
+        b.losses++;
+      } else {
+        a.losses++;
+        b.wins++;
+      }
+    }
+  }
+  return records;
+}
+
 export function analyze(
   models,
-  weights,
   {
     costSource = "composite",
-    minSources = 2,
     includeEstimated = false,
     costMinSources = 2,
     costSources = COST_SOURCES,
   } = {},
 ) {
   const profile = combinedCostProfile(models, includeEstimated, costSources);
-  const sources = Object.keys(weights).filter((s) => weights[s] > 0);
-  const required = Math.min(minSources, sources.length);
+  const sources = COST_SOURCES;
+  const required = 2;
   const eligible = models.filter(
     (m) =>
       sources.filter((s) => {
@@ -166,6 +182,7 @@ export function analyze(
         return Number.isFinite(r?.score) && (includeEstimated || !r.estimated);
       }).length >= required,
   );
+  const matches = majorityRecords(eligible, includeEstimated);
   const pool = Object.fromEntries(
     sources.map((s) => [
       s,
@@ -183,24 +200,38 @@ export function analyze(
       const r = m.representatives[s];
       return Number.isFinite(r?.score) && (includeEstimated || !r.estimated);
     });
-    const valid = sources.length > 0 && available.length >= required;
+    const covered = sources.length > 0 && available.length >= required;
+    const record = matches.get(m.id) ?? null;
+    const valid = covered && record.opponents > 0;
     let composite = null;
     const percentiles = {};
+    let auxiliary = null;
     if (valid) {
-      for (const s of available)
-        percentiles[s] = percentile(m.representatives[s].score, pool[s]);
-      const weight = available.reduce((t, s) => t + weights[s], 0);
-      composite =
-        available.reduce((t, s) => t + percentiles[s] * weights[s], 0) / weight;
+      // 先按有理数精确求和再转数值，避免累加顺序将数学同分拆成不同名次。
+      let numerator = 0n,
+        denominator = 1n;
+      for (const source of available) {
+        const [n, d] = percentileFraction(
+          m.representatives[source].score,
+          pool[source],
+        );
+        percentiles[source] = Number(n) / Number(d);
+        numerator = numerator * d + n * denominator;
+        denominator *= d;
+      }
+      denominator *= BigInt(available.length);
+      const divisor = gcd(numerator, denominator);
+      auxiliary = Number(numerator / divisor) / Number(denominator / divisor);
+      composite = (100 * (record.wins + 0.5 * record.draws)) / record.opponents;
     }
     const costRecord = m.representatives[costSource];
     const combined = combinedCost(m, profile, includeEstimated, costMinSources);
     const cost =
       costSource === "composite" ? combined.value : costRecord?.costTask;
-    const reason = !sources.length
-      ? "至少启用一个榜单"
+    const reason = !covered
+      ? `需要 ${required} 个有效榜单，目前 ${available.length} 个`
       : !valid
-        ? `需要 ${required} 个有效榜单，目前 ${available.length} 个`
+        ? `多数对决至少需要 ${required} 榜共同有效的对手，当前没有对手`
         : !Number.isFinite(cost)
           ? costSource === "composite"
             ? `综合成本至少需要 ${costMinSources} 个来源的有效成本`
@@ -211,6 +242,8 @@ export function analyze(
     return {
       ...m,
       composite,
+      auxiliary,
+      record,
       costCoverage: combined.coverage,
       percentiles,
       available,
@@ -234,136 +267,30 @@ export function analyze(
     r.openFrontier = openFront.has(r.id);
   }
   for (const r of rows) {
-    r.dominatedBy = plotted
-      .filter(
-        (o) =>
-          o.frontier &&
-          o.id !== r.id &&
-          o.cost <= r.cost &&
-          o.composite >= r.composite &&
-          (o.cost < r.cost || o.composite > r.composite),
-      )
-      .map((o) => o.name);
+    r.dominatedBy = !Number.isFinite(r.composite)
+      ? []
+      : plotted
+          .filter(
+            (o) =>
+              o.frontier &&
+              o.id !== r.id &&
+              o.cost <= r.cost &&
+              o.composite >= r.composite &&
+              (o.cost < r.cost || o.composite > r.composite),
+          )
+          .map((o) => o.name);
   }
   return {
     rows,
     sources,
     required,
+    includeEstimated,
     cohort: eligible.length,
     plotted: plotted.length,
     costProfile: profile,
   };
 }
-export function comparePresets(models, options) {
-  return Object.entries(PRESETS)
-    .filter(([k]) => k !== "broad")
-    .map(([key, p]) => ({
-      key,
-      label: p.label,
-      ...analyze(models, p.weights, {
-        ...options,
-        minSources: Object.values(p.weights).filter((v) => v > 0).length,
-      }),
-    }));
-}
 
-// 覆盖口径敏感性：直接对照「全部启用榜单的严格比较」与「至少 X 榜探索」两种口径的结果差异。
-// 名次变化来自样本与权重再分配，不代表模型能力变化；只启用一个榜单时没有口径之分。
-function compositeRanks(rows) {
-  // 与 rankedModels 同口径：每个有效综合分的行都有名次，并列取相同名次。
-  const sorted = rows
-    .filter((r) => Number.isFinite(r.composite))
-    .sort((a, b) => b.composite - a.composite || a.name.localeCompare(b.name));
-  const ranks = new Map();
-  let last = null,
-    rank = 0;
-  for (const [i, r] of sorted.entries()) {
-    if (last !== r.composite) {
-      last = r.composite;
-      rank = i + 1;
-    }
-    ranks.set(r.id, rank);
-  }
-  return ranks;
-}
-const frontierLabel = (r) =>
-  r?.frontier ? "全球前沿" : r?.openFrontier ? "开放权重前沿" : "未入前沿";
-export function scopeComparison(
-  models,
-  weights,
-  { minSources = 2, ...options } = {},
-) {
-  const sources = Object.keys(weights).filter((s) => weights[s] > 0);
-  if (sources.length < 2) return null;
-  const strictMin = sources.length;
-  // 无论当前处于哪种口径，都同时给出两种结果：探索口径取「用户当前门槛」与「严格减一」中较小者。
-  const exploreMin = Math.min(
-    Math.max(1, Math.round(minSources)),
-    strictMin - 1,
-  );
-  const strict = analyze(models, weights, {
-    ...options,
-    minSources: strictMin,
-  });
-  const explore = analyze(models, weights, {
-    ...options,
-    minSources: exploreMin,
-  });
-  const strictRanks = compositeRanks(strict.rows),
-    exploreRanks = compositeRanks(explore.rows);
-  const strictById = new Map(strict.rows.map((r) => [r.id, r])),
-    exploreById = new Map(explore.rows.map((r) => [r.id, r]));
-  const nameOf = (id) => exploreById.get(id)?.name ?? id;
-  const shifts = [];
-  for (const [id, strictRank] of strictRanks) {
-    const exploreRank = exploreRanks.get(id);
-    if (exploreRank != null && exploreRank !== strictRank)
-      shifts.push({
-        id,
-        name: nameOf(id),
-        strictRank,
-        exploreRank,
-        shift: strictRank - exploreRank,
-      });
-  }
-  shifts.sort(
-    (a, b) =>
-      Math.abs(b.shift) - Math.abs(a.shift) || a.name.localeCompare(b.name),
-  );
-  const onlyExploration = explore.rows
-    .filter((r) => Number.isFinite(r.composite) && !strictRanks.has(r.id))
-    .map((r) => ({
-      id: r.id,
-      name: r.name,
-      exploreRank: exploreRanks.get(r.id),
-    }))
-    .sort((a, b) => a.exploreRank - b.exploreRank);
-  const frontierChanges = [];
-  for (const r of explore.rows) {
-    const before = frontierLabel(strictById.get(r.id)),
-      after = frontierLabel(r);
-    if (before !== after)
-      frontierChanges.push({
-        id: r.id,
-        name: r.name,
-        strict: before,
-        explore: after,
-      });
-  }
-  return {
-    strictMin,
-    exploreMin,
-    strictCohort: strict.cohort,
-    exploreCohort: explore.cohort,
-    shiftCount: shifts.length,
-    shifts: shifts.slice(0, 10),
-    onlyExplorationCount: onlyExploration.length,
-    onlyExploration: onlyExploration.slice(0, 10),
-    frontierChanges,
-  };
-}
-// 导出附带数据时间与计算口径，便于日后复核同一结论；新列固定追加在表头末尾，meta 缺省时值留空。
-// 缓存文件是本地可编辑的，时间戳可能是任意字符串：解析失败留空，不让导出按钮抛异常。
 const isoTime = (value) => {
   const t = Date.parse(value);
   return Number.isFinite(t) ? new Date(t).toISOString() : "";
@@ -389,6 +316,12 @@ export function csvExport(rows, meta = {}) {
     "LiveBench配置",
     "数据时间",
     "评分口径",
+    "评分公式",
+    "胜场",
+    "平场",
+    "负场",
+    "对手数",
+    "同积分辅助分",
   ];
   const scope = typeof meta.scope === "string" ? meta.scope : "";
   const dataTime = isoTime(meta.lastRefresh);
@@ -423,6 +356,12 @@ export function csvExport(rows, meta = {}) {
         ),
         dataTime,
         scope,
+        "两榜多数对决（同积分辅助排序）",
+        r.record?.wins,
+        r.record?.draws,
+        r.record?.losses,
+        r.record?.opponents,
+        r.auxiliary?.toFixed(4),
       ]),
     ]
       .map((r) => r.map(safe).join(","))
@@ -487,10 +426,10 @@ export function sourceAudit(models, modelId, source) {
 }
 export function frontierStability(models, { includeEstimated = false } = {}) {
   const profile = combinedCostProfile(models, includeEstimated);
-  // Fix the same sample across all scenarios so absence never counts as failure.
+  // 各成本场景固定同一样本，缺失不记为失败。
   const cohort = models.filter(
     (m) =>
-      Object.keys(PRESETS.equal.weights).every((s) => {
+      COST_SOURCES.every((s) => {
         const r = m.representatives[s];
         return Number.isFinite(r?.score) && (includeEstimated || !r.estimated);
       }) && combinedCost(m, profile, includeEstimated).value !== null,
@@ -508,34 +447,31 @@ export function frontierStability(models, { includeEstimated = false } = {}) {
       },
     ]),
   );
-  for (const key of ["capability", "equal", "objective"])
-    for (const costSource of ["composite", "aa", "vals", "livebench"]) {
-      const a = analyze(cohort, PRESETS[key].weights, {
+  for (const costSource of ["composite", "aa", "vals", "livebench"]) {
+    const a = analyze(cohort, {
+      costSource,
+      includeEstimated,
+      costMinSources: 3,
+    });
+    for (const r of a.rows) {
+      const record = records.get(r.id);
+      record.globalCount += Number(r.frontier);
+      record.openCount += Number(r.openFrontier);
+      record.scenarios.push({
         costSource,
-        minSources: 3,
-        includeEstimated,
-        costMinSources: 3,
+        global: r.frontier,
+        open: r.openFrontier,
       });
-      for (const r of a.rows) {
-        const record = records.get(r.id);
-        record.globalCount += Number(r.frontier);
-        record.openCount += Number(r.openFrontier);
-        record.scenarios.push({
-          preset: key,
-          costSource,
-          global: r.frontier,
-          open: r.openFrontier,
-        });
-      }
     }
+  }
   return {
     cohort: cohort.length,
-    scenarioCount: 12,
+    scenarioCount: 4,
     rows: [...records.values()]
       .map((r) => ({
         ...r,
-        globalIndex: (r.globalCount / 12) * 100,
-        openIndex: r.openWeights === true ? (r.openCount / 12) * 100 : null,
+        globalIndex: (r.globalCount / 4) * 100,
+        openIndex: r.openWeights === true ? (r.openCount / 4) * 100 : null,
       }))
       .sort(
         (a, b) =>

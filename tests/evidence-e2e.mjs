@@ -74,8 +74,12 @@ try {
   await page
     .getByText(/综合成本基准已按 Artificial Analysis、Vals 的共同样本重算/)
     .waitFor();
-  assert.ok(
-    (await page.getByText("LiveBench 已排除", { exact: true }).count()) > 0,
+  assert.equal(
+    await page
+      .locator(".ranking-main-table")
+      .getByRole("columnheader", { name: "数据提示", exact: true })
+      .count(),
+    0,
   );
   await page.screenshot({
     path: "test-artifacts/quality-exclusion.png",
@@ -83,6 +87,19 @@ try {
   });
   await page.getByRole("tab", { name: "前沿探索", exact: true }).click();
   await page.locator("canvas").waitFor();
+  await page
+    .locator(".scoring-context")
+    .getByText(/至少 2 榜/)
+    .waitFor();
+  // 过时公式参数不会切换评分；整源排除后仍按当前两榜准入计算。
+  await page.evaluate(() => {
+    location.hash = "#explore?score=majority&eh=1&es=1";
+  });
+  await page.locator("canvas").waitFor();
+  await page
+    .locator(".scoring-context")
+    .getByText(/至少 2 榜/)
+    .waitFor();
   await page.getByText("2 源共同样本中位数", { exact: true }).waitFor();
   await page.getByRole("tab", { name: "综合总览", exact: true }).click();
   await page
@@ -92,6 +109,9 @@ try {
     .getByRole("heading", { name: "配置一致性与数据提示", exact: true })
     .waitFor();
   await page.locator(".configuration-evidence").first().waitFor();
+  assert.ok(
+    (await page.getByText("LiveBench 已排除", { exact: true }).count()) > 0,
+  );
   await page.screenshot({
     path: "test-artifacts/configuration-evidence.png",
     fullPage: true,
@@ -150,6 +170,7 @@ try {
           "history drawer",
           "quality settings persistence",
           "simulated source exclusion",
+          "source exclusion keeps the only two-source rule",
           "two-source cost baseline",
           "configuration evidence",
           "model history raw observations",

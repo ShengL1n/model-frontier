@@ -273,6 +273,37 @@ export function parseLivebench(csv, costCsv, js) {
     ],
   };
 }
+// LiveBench 发布 id 有两种形态：v1 代是虚线日期（"2026-06-25"），数据文件在
+// /v1/table_<日期>.csv；v2 代是紧凑日期（"20261014"），数据文件在
+// /data/<id>/table.csv。2026-10 站点改版：v1 文件从根目录迁到 /v1/，同时引入 v2
+// 目录布局——旧实现「扫 JS 里的虚线日期 + 只猜根路径」因此全部 404（v2 的紧凑 id
+// 压根不出现在虚线日期扫描里，见 docs/adr/0008）。现在从入口 JS 枚举两种形态的
+// 候选发布（新→旧），每种按「现行布局 → 历史布局」探测，以 CSV 表头校验命中；
+// 站点再改版时通常只需往 lbLayouts 里加一项，不必重新踩坑。
+const LB_MAX_RELEASES = 12;
+const LB_FILE_TIMEOUT = 12000;
+const lbDashed = (id) =>
+  id.includes("-")
+    ? id
+    : `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`;
+function lbReleaseIds(js) {
+  const dashed = [...js.matchAll(/"(20\d{2}-\d{2}-\d{2})"/g)].map((m) => m[1]);
+  const compact = [...js.matchAll(/"(20\d{6})"/g)].map((m) => m[1]);
+  return [...new Set([...dashed, ...compact])]
+    .map((id) => ({ id, sort: lbDashed(id) }))
+    .sort((a, b) => (a.sort < b.sort ? 1 : a.sort > b.sort ? -1 : 0))
+    .slice(0, LB_MAX_RELEASES)
+    .map((r) => r.id);
+}
+// 每个候选发布的 [table, cost] 布局对，按该 id 形态的现行布局优先，并交叉探测
+// 另一种形态的布局——任一层重新启用或回迁都能接住。
+function lbLayouts(id) {
+  const under = lbDashed(id).replaceAll("-", "_");
+  const v1 = [`v1/table_${under}.csv`, `v1/cost_${under}.csv`];
+  const root = [`table_${under}.csv`, `cost_${under}.csv`];
+  const v2 = [`data/${id}/table.csv`, `data/${id}/cost.csv`];
+  return id.includes("-") ? [v1, root, v2] : [v2, v1, root];
+}
 export async function fetchLivebench() {
   const html = await getText(SOURCE_INFO.livebench.url);
   const $ = cheerio.load(html);
@@ -282,41 +313,34 @@ export async function fetchLivebench() {
     .find((s) => /main\..*\.js/.test(s));
   if (!path) throw new Error("LiveBench 入口脚本位置变化");
   const js = await getText(new URL(path, SOURCE_INFO.livebench.url));
+  // 文件键与展示发布日期可能不同，保留源站明确给出的日期映射。
   const labels = Object.fromEntries(
     [...js.matchAll(/"(20\d{2}-\d{2}-\d{2})":"(20\d{2}-\d{2}-\d{2})"/g)].map(
       (m) => [m[1], m[2]],
     ),
   );
-  const dates = [
-    ...new Set(
-      [...Object.keys(labels), ...js.matchAll(/20\d{2}-\d{2}-\d{2}/g)].map(
-        (x) => (typeof x === "string" ? x : x[0]),
-      ),
-    ),
-  ]
-    .sort()
-    .toReversed()
-    .slice(0, 18);
-  for (const date of dates) {
-    let csv;
-    try {
-      csv = await getText(
-        `https://livebench.ai/table_${date.replaceAll("-", "_")}.csv`,
-        12000,
-      );
-    } catch {
-      continue;
+  const releases = lbReleaseIds(js);
+  if (!releases.length)
+    throw new Error("LiveBench 发布列表未找到；保留上次数据");
+  for (const id of releases) {
+    for (const [tablePath, costPath] of lbLayouts(id)) {
+      const csv = await getText(
+        new URL(tablePath, SOURCE_INFO.livebench.url),
+        LB_FILE_TIMEOUT,
+      ).catch(() => null);
+      // 站点对未命中路径返回 SPA 壳（HTTP 200 + HTML），表头是唯一的拦网；
+      // cost 同理，拿到 HTML 壳按缺失处理，不把解析垃圾当成本。
+      if (!csv || !csv.startsWith("model,")) continue;
+      const cost = await getText(
+        new URL(costPath, SOURCE_INFO.livebench.url),
+        LB_FILE_TIMEOUT,
+      ).catch(() => null);
+      return {
+        ...parseLivebench(csv, cost?.startsWith("model,") ? cost : null, js),
+        sourceDate: labels[id] ?? lbDashed(id),
+        releaseKey: id,
+      };
     }
-    if (!csv.startsWith("model,")) continue;
-    const costCsv = await getText(
-      `https://livebench.ai/cost_${date.replaceAll("-", "_")}.csv`,
-      12000,
-    ).catch(() => null);
-    return {
-      ...parseLivebench(csv, costCsv, js),
-      sourceDate: labels[date] ?? date,
-      releaseKey: date,
-    };
   }
   throw new Error("LiveBench 发布文件未找到；保留上次数据");
 }

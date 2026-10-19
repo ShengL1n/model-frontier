@@ -37,6 +37,7 @@ import {
   SOURCE_IDS,
 } from "./portal.mjs";
 import CompareChart from "./CompareChart.jsx";
+import { majorityMatch } from "./analysis.mjs";
 import {
   ConfigurationDetails,
   EvidenceBadges,
@@ -204,7 +205,7 @@ export function Overview({
       )}
       <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         {label === "综合能力领先"
-          ? "同一评分口径下的综合分顺序，不要求成本已披露。"
+          ? "按当前融合积分排序，不要求成本已披露；默认至少两榜准入，票数不足的对决不计入战绩。"
           : "在开放权重模型内排序；分数保持全球样本口径。"}{" "}
         并列分数无严格先后。
       </p>
@@ -393,13 +394,11 @@ export function Rankings({
   selection,
   onSelectionChange,
   onExport,
-  includeEstimated,
   excludeStale,
   sources,
   ranking,
   onRanking,
   budget,
-  scopeDiff,
   exportMeta,
 }) {
   const {
@@ -497,7 +496,7 @@ export function Rankings({
           <small>
             {raw?.estimated ? "估算 · " : ""}
             {r.percentiles[s] != null
-              ? `排名分 ${number(r.percentiles[s])}`
+              ? `${"样本内位置（不计主积分）"} ${number(r.percentiles[s])}`
               : "未参与当前评分"}
           </small>
         </div>
@@ -529,20 +528,38 @@ export function Rankings({
           },
           { title: "开放状态", width: 130, render: (_, r) => stateTag(r) },
           {
-            title: "综合分",
+            title: "多数对决积分",
             dataIndex: "composite",
             width: 115,
             sorter: (a, b) =>
-              (a.composite ?? -Infinity) - (b.composite ?? -Infinity),
-            render: scoreCell,
+              (a.composite ?? -Infinity) - (b.composite ?? -Infinity) ||
+              (a.auxiliary ?? -Infinity) - (b.auxiliary ?? -Infinity),
+            render: (value, row) => (
+              <div>
+                {scoreCell(value)}
+                {row.record && value != null && (
+                  <small className="block text-[10px] text-[#627987]">
+                    {row.record.wins} 胜 / {row.record.draws} 平 /{" "}
+                    {row.record.losses} 负 · {row.record.opponents} 个对手
+                  </small>
+                )}
+              </div>
+            ),
           },
+          ...[
+            {
+              title: (
+                <Tooltip title="仅当主积分完全相同时用于排序：已有榜单的排名百分位等权平均，不参与帕累托判断">
+                  同积分辅助分
+                </Tooltip>
+              ),
+              dataIndex: "auxiliary",
+              width: 135,
+              render: number,
+            },
+          ],
           ...sourceColumns,
           ...suiteColumns,
-          {
-            title: "数据提示",
-            width: 210,
-            render: (_, r) => <EvidenceBadges model={r} sources={sources} />,
-          },
           {
             title: "评分覆盖",
             width: 110,
@@ -616,101 +633,6 @@ export function Rankings({
             ),
           },
         ];
-  const scopePanel = view === "fusion" && scopeDiff && (
-    <div className="scope-diff" role="group" aria-label="覆盖口径差异">
-      <div className="scope-diff-head">
-        <b className="text-[12px] text-[#3c5b56]">覆盖口径差异</b>
-        <span>
-          严格口径（全部 {scopeDiff.strictMin} 榜）评分 {scopeDiff.strictCohort}{" "}
-          个模型族；探索口径（至少 {scopeDiff.exploreMin} 榜）评分{" "}
-          {scopeDiff.exploreCohort} 个：其中 {scopeDiff.onlyExplorationCount}{" "}
-          个仅在探索口径可评分、{scopeDiff.shiftCount} 个名次变化、
-          {scopeDiff.frontierChanges.length} 个前沿成员身份不同。
-        </span>
-      </div>
-      {scopeDiff.onlyExplorationCount > 0 && (
-        <p className="mt-[8px] mb-0 text-[#526f70]">
-          仅在探索口径参与评分（{scopeDiff.onlyExplorationCount} 个）：
-          {scopeDiff.onlyExploration
-            .slice(0, 5)
-            .map((x) => `${x.name}（第 ${x.exploreRank} 名）`)
-            .join("、")}
-          {scopeDiff.onlyExplorationCount > 5 ? "…" : ""}
-        </p>
-      )}
-      {scopeDiff.shifts.length > 0 && (
-        <Table
-          rowKey="id"
-          size="small"
-          pagination={false}
-          dataSource={scopeDiff.shifts}
-          columns={[
-            {
-              title: "模型",
-              dataIndex: "name",
-              render: (v, r) => (
-                <button className="model-link" onClick={() => onSelect(r.id)}>
-                  {v}
-                </button>
-              ),
-            },
-            {
-              title: "严格名次",
-              dataIndex: "strictRank",
-              width: 92,
-              render: (v) => <span className="number">{v}</span>,
-            },
-            {
-              title: "探索名次",
-              dataIndex: "exploreRank",
-              width: 92,
-              render: (v) => <span className="number">{v}</span>,
-            },
-            {
-              title: "名次变化",
-              dataIndex: "shift",
-              width: 92,
-              render: (v) => (
-                <span className={"number " + (v > 0 ? "up" : "down")}>
-                  {v > 0 ? `↑ ${v}` : `↓ ${-v}`}
-                </span>
-              ),
-            },
-          ]}
-        />
-      )}
-      {scopeDiff.frontierChanges.length > 0 && (
-        <p className="mt-[8px] mb-0 text-[#526f70]">
-          前沿成员变化：
-          {scopeDiff.frontierChanges.slice(0, 8).map((f, i) => (
-            <span key={f.id}>
-              <button
-                className="model-link inline"
-                onClick={() => onSelect(f.id)}
-              >
-                {f.name}
-              </button>
-              （{f.strict} → {f.explore}）
-              {i < Math.min(8, scopeDiff.frontierChanges.length) - 1
-                ? "；"
-                : ""}
-            </span>
-          ))}
-          {scopeDiff.frontierChanges.length > 8
-            ? ` 等 ${scopeDiff.frontierChanges.length} 个`
-            : ""}
-        </p>
-      )}
-      {!scopeDiff.shifts.length && !scopeDiff.frontierChanges.length && (
-        <p className="mt-[8px] mb-0 text-[#526f70]">
-          当前两种口径的排名与前沿成员完全一致。
-        </p>
-      )}
-      <p className="mt-[8px] mb-0 text-[10px] text-[#84988f]">
-        差异来自比较样本与权重再分配，不代表模型能力变化；切换「最低榜单覆盖」可在两种口径间复核同一结论。
-      </p>
-    </div>
-  );
   return (
     <div className="min-w-0">
       <section className="ranking-intro rounded-[13px] border border-line bg-surface shadow-card">
@@ -857,15 +779,14 @@ export function Rankings({
             )}
             {view === "fusion" && <span>勾选 2–4 个模型加入对比</span>}
           </div>
-          {view === "fusion" && analysis.required < analysis.sources.length && (
+          {view === "fusion" && (
             <Alert
               className="ranking-alert"
               type="info"
               showIcon
-              title={`当前至少 ${analysis.required} 榜，缺分不补零，部分覆盖按已有权重重分配。严格比较可选择全部榜单。`}
+              title="至少两榜参赛；每对共同有效榜单不足两个不比赛。不同模型的实际对手集合可能不同，请结合战绩与对手数阅读。"
             />
           )}
-          {scopePanel}
           {view !== "fusion" && (
             <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
               {NAMES[view]}{" "}
@@ -904,7 +825,7 @@ export function Rankings({
           />
           <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             {view === "fusion"
-              ? `综合分为当前样本内的排名分加权值，不是正确率。AA 估算分${includeEstimated ? "已启用" : "默认排除"}，榜单覆盖不额外加分。`
+              ? "多数对决积分：至少两榜准入，主积分相同才用辅助分排序；对手集合可能不同，请结合实际对手数阅读。辅助分不参与帕累托判断，多数关系可能循环。"
               : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
           </p>
         </section>
@@ -939,6 +860,16 @@ export function Comparison({
         .filter(Boolean),
     [selection, analysis.rows],
   );
+  const matches = selected.flatMap((left, i) =>
+    selected.slice(i + 1).map((right) => ({
+      id: `${left.id}:${right.id}`,
+      left,
+      right,
+      ...majorityMatch(left, right, {
+        includeEstimated: analysis.includeEstimated,
+      }),
+    })),
+  );
   const columns = [
     { title: "指标 / 来源", dataIndex: "label", fixed: "left", width: 185 },
     ...selected.map((r) => ({
@@ -960,7 +891,19 @@ export function Comparison({
   const facts = [
     metric("creator", "厂商", (r) => r.creator),
     metric("openness", "开放状态", stateTag),
-    metric("composite", "综合能力分", (r) => number(r.composite)),
+    metric("composite", "多数对决积分", (r) => number(r.composite)),
+    ...[
+      metric("record", "对决战绩（胜 / 平 / 负）", (r) =>
+        r.record && r.composite != null
+          ? `${r.record.wins} / ${r.record.draws} / ${r.record.losses}（${r.record.opponents} 个对手）`
+          : "未参加正式排名",
+      ),
+    ],
+    ...[
+      metric("auxiliary", "同积分辅助分（仅用于排序）", (r) =>
+        number(r.auxiliary),
+      ),
+    ],
     metric(
       "coverage",
       "有效评分覆盖",
@@ -1098,9 +1041,57 @@ export function Comparison({
             </div>
             <CompareChart rows={selected} />
             <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
-              原始分量纲不同，因此图中只比较各榜排名分；下表完整保留原始分。部分覆盖的综合分比较依据可能不同。
+              原始分量纲不同，因此图中只比较各榜相对位置；下表完整保留原始分。多数对决主积分使用逐榜胜负；仅在主积分相同时使用这些排名分的等权平均辅助排序；不足当前覆盖门槛的模型不参加正式排名。
             </p>
           </section>
+          {
+            <section className="majority-comparison mb-[20px] rounded-[13px] border border-line bg-surface p-[20px] shadow-card">
+              <h2 className="text-[17px]">两两对决与原始分差</h2>
+              <p className="text-[11px] leading-[1.9] text-[#627987]">
+                每榜各一票。下表每行以左侧模型为参照，分差只在同一榜内计算，不跨榜相加，也不混入积分。共同有效榜单不足{" "}
+                {analysis.required} 个不判胜负。
+              </p>
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                scroll={{ x: 1000 }}
+                dataSource={matches}
+                columns={[
+                  {
+                    title: "对阵（左 / 右）",
+                    width: 200,
+                    render: (_, r) => `${r.left.name} / ${r.right.name}`,
+                  },
+                  ...SOURCE_IDS.map((source) => ({
+                    title: NAMES[source],
+                    width: 200,
+                    render: (_, r) => {
+                      const ballot = r.ballots.find((b) => b.source === source);
+                      return (
+                        <span>
+                          {number(r.left.representatives[source]?.score)} /{" "}
+                          {number(r.right.representatives[source]?.score)}
+                          <br />
+                          {ballot.vote === null
+                            ? "未计票"
+                            : `差 ${ballot.difference > 0 ? "+" : ""}${number(ballot.difference)} · ${ballot.vote > 0 ? "左胜" : ballot.vote < 0 ? "右胜" : "平票"}`}
+                        </span>
+                      );
+                    },
+                  })),
+                  {
+                    title: "票数与结果",
+                    width: 180,
+                    render: (_, r) =>
+                      !r.complete
+                        ? "共同有效榜单不足，不判胜负"
+                        : `${r.leftWins}∶${r.rightWins}（${r.tied} 平票）· ${r.result > 0 ? "左方获胜" : r.result < 0 ? "右方获胜" : "对决平局"}`,
+                  },
+                ]}
+              />
+            </section>
+          }
           <section className="compare-facts rounded-[13px] border border-line bg-surface shadow-card">
             <div className="portal-section-heading">
               <div>

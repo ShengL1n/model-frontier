@@ -11,7 +11,6 @@ import {
   InputNumber,
   Select,
   Segmented,
-  Slider,
   Spin,
   Switch,
   Table,
@@ -52,13 +51,9 @@ import {
 } from "./presentation.mjs";
 import {
   analyze,
-  comparePresets,
   csvExport,
   sourceAudit,
   frontierStability,
-  migratePreferences,
-  scopeComparison,
-  PRESETS,
 } from "./analysis.mjs";
 import { Overview, Rankings, Comparison, CreatorChips } from "./Portal.jsx";
 import { applyBudget, sanitizeSelection, vendorChipCounts } from "./portal.mjs";
@@ -99,14 +94,6 @@ function download(content, type, name) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-const clampMinSources = (value, weights) =>
-  Math.max(
-    1,
-    Math.min(
-      Math.round(value ?? 2),
-      Object.values(weights).filter((v) => v > 0).length || 1,
-    ),
-  );
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -127,28 +114,22 @@ async function copyText(text) {
 }
 function App() {
   // 惰性初始化：本地偏好与分享链接参数只在首次渲染解析一次。
-  const [bootstrap] = useState(() => ({
-    initial: migratePreferences(stored()),
-    shared: decodeShareState(location.hash).state,
-  }));
+  const [bootstrap] = useState(() => {
+    const previous = stored();
+    return {
+      initial: previous ?? {},
+      shared: decodeShareState(location.hash).state,
+    };
+  });
   const { initial, shared } = bootstrap;
   // 带参数的链接定义完整评分口径：缺省字段一律取默认值，与 reload 恢复语义一致，保证同一链接在任何机器上复现同一结论。
   // 判定与下方 hashchange 恢复处理器严格同源（URL 是否含 '?'），仅含无效参数的链接两条路径行为一致；
   // 无参数的地址不视为分享链接，沿用本地偏好；对比选择是本机数据，始终按「链接显式带 sel 才覆盖」处理。
   const hasShare = location.hash.includes("?");
   const prefs = hasShare ? {} : initial;
-  const sharedPreset = shared.preset ?? prefs.preset ?? "capability";
-  const sharedWeights =
-    (shared.preset && shared.preset !== "custom"
-      ? PRESETS[shared.preset].weights
-      : shared.weights) ??
-    prefs.weights ??
-    PRESETS.capability.weights;
   const [data, setData] = useState(null),
     [error, setError] = useState(null),
     [busy, setBusy] = useState(false),
-    [preset, setPreset] = useState(sharedPreset),
-    [weights, setWeights] = useState(sharedWeights),
     [costSource, setCostSource] = useState(
       shared.costSource ??
         (prefs.costSchemaVersion === 2
@@ -156,13 +137,6 @@ function App() {
           : "composite"),
     ),
     [focus, setFocus] = useState(shared.focus ?? prefs.focus ?? "openFirst"),
-    [minSources, setMinSources] = useState(
-      clampMinSources(
-        shared.minSources ??
-          (prefs.coverageSchemaVersion === 2 ? (prefs.minSources ?? 2) : 2),
-        sharedWeights,
-      ),
-    ),
     [query, setQuery] = useState(shared.query ?? ""),
     [creator, setCreator] = useState(shared.creator || undefined),
     [estimated, setEstimated] = useState(
@@ -224,14 +198,6 @@ function App() {
       }
       if (!location.hash.includes("?")) return;
       const { state } = decodeShareState(location.hash);
-      const preset = state.preset ?? "capability";
-      const weights =
-        state.preset === "custom" && state.weights
-          ? state.weights
-          : PRESETS[preset].weights;
-      setPreset(preset);
-      setWeights(weights);
-      setMinSources(clampMinSources(state.minSources, weights));
       setEstimated(state.includeEstimated === true);
       setExcludeHistorical(state.excludeHistorical === true);
       setExcludeStale(state.excludeStale === true);
@@ -311,12 +277,8 @@ function App() {
     localStorage.setItem(
       "frontier:preferences",
       JSON.stringify({
-        weights,
-        preset,
         costSource,
         focus,
-        minSources,
-        coverageSchemaVersion: 2,
         costSchemaVersion: 2,
         sourcePolicyVersion: 2,
         includeEstimated: estimated,
@@ -327,11 +289,8 @@ function App() {
       }),
     );
   }, [
-    weights,
-    preset,
     costSource,
     focus,
-    minSources,
     estimated,
     excludeHistorical,
     excludeStale,
@@ -361,24 +320,7 @@ function App() {
   );
   const analysis = useMemo(
     () =>
-      analyze(evaluationModels, weights, {
-        costSource,
-        minSources,
-        includeEstimated: estimated,
-        costSources: activeCostSources,
-      }),
-    [
-      evaluationModels,
-      weights,
-      costSource,
-      minSources,
-      estimated,
-      activeCostSources,
-    ],
-  );
-  const comparisons = useMemo(
-    () =>
-      comparePresets(evaluationModels, {
+      analyze(evaluationModels, {
         costSource,
         includeEstimated: estimated,
         costSources: activeCostSources,
@@ -404,6 +346,7 @@ function App() {
               ? Number(b.openWeights === true) - Number(a.openWeights === true)
               : 0) ||
             (b.composite ?? -1) - (a.composite ?? -1) ||
+            (b.auxiliary ?? -1) - (a.auxiliary ?? -1) ||
             b.coverage - a.coverage,
         ),
     [analysis, focus, creator, query, onlyFront, budgetSource, budgetLimit],
@@ -413,35 +356,10 @@ function App() {
     () => vendorChipCounts(analysis.rows),
     [analysis.rows],
   );
-  // 覆盖口径差异：无论当前处于哪种覆盖门槛，都并排给出严格口径与探索口径的对照。
-  const scopeDiff = useMemo(
-    () =>
-      scopeComparison(evaluationModels, weights, {
-        costSource,
-        minSources,
-        includeEstimated: estimated,
-        costSources: activeCostSources,
-      }),
-    [
-      evaluationModels,
-      weights,
-      costSource,
-      minSources,
-      estimated,
-      activeCostSources,
-    ],
-  );
   // 导出附带数据时间与评分口径，保证日后可复核同一结论。
   const scopeLabel = useMemo(() => {
-    const sum = Object.values(weights).reduce((a, b) => a + b, 0);
     const parts = [
-      PRESETS[preset]?.label ?? "自定义权重",
-      ...Object.entries(weights)
-        .filter(([, v]) => v > 0)
-        .map(
-          ([key, v]) =>
-            `${key === "livebench" ? "LB" : key.toUpperCase()} ${sum ? Math.round((v / sum) * 100) : 0}%`,
-        ),
+      "两榜多数对决（三榜各一票，同积分辅助排序）",
       `至少 ${analysis.required} 榜`,
       estimated ? "允许 AA 估算" : "排除 AA 估算",
     ];
@@ -452,8 +370,6 @@ function App() {
       parts.push(`预算筛选：${NAMES[budgetSource]} ≤ $${budgetLimit} / 任务`);
     return parts.join(" · ");
   }, [
-    preset,
-    weights,
     analysis.required,
     estimated,
     excludeHistorical,
@@ -471,13 +387,10 @@ function App() {
     () => ({ budgetSource, budgetLimit }),
     [budgetSource, budgetLimit],
   );
-  // 分享链接与页面状态实时同步：权重、覆盖门槛、质量排除、成本口径、预算、筛选与对比选择全部入链。
-  // 搜索输入与权重拖动会高频触发，做 250ms 去抖，避免 replaceState 限流导致地址落后。
+  // 分享链接同步当前质量排除、成本口径、预算、筛选与对比选择。
+  // 搜索输入做 250ms 去抖，避免 replaceState 限流导致地址落后。
   const shareTarget = () =>
     shareHash(tab, {
-      preset,
-      weights,
-      minSources,
       includeEstimated: estimated,
       excludeHistorical,
       excludeStale,
@@ -509,9 +422,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shareTarget 每次渲染重建，上方已逐一枚举其全部输入
   }, [
     tab,
-    preset,
-    weights,
-    minSources,
     estimated,
     excludeHistorical,
     excludeStale,
@@ -534,23 +444,14 @@ function App() {
     } else setError("复制失败：请直接复制浏览器地址栏的链接");
   };
   const stability = useMemo(
-    () => frontierStability(evaluationModels, { includeEstimated: estimated }),
+    () =>
+      frontierStability(evaluationModels, {
+        includeEstimated: estimated,
+      }),
     [evaluationModels, estimated],
   );
   const current = analysis.rows.find((r) => r.id === selected);
   const stale = Object.values(data?.sources ?? {}).filter((s) => s.stale);
-  const enabled = Object.values(weights).filter((v) => v > 0).length;
-  const total = Object.values(weights).reduce((a, b) => a + b, 0);
-  const changePreset = (key) => {
-    setPreset(key);
-    setWeights(PRESETS[key].weights);
-    setMinSources(
-      Math.min(
-        2,
-        Object.values(PRESETS[key].weights).filter((v) => v > 0).length,
-      ),
-    );
-  };
   const refresh = async () => {
     setBusy(true);
     try {
@@ -617,16 +518,18 @@ function App() {
         ) : r.openWeights === true ? (
           <Tag color="green">开放权重</Tag>
         ) : r.openWeights === false ? (
-          <Tag>闭源</Tag>
+          <Tag color="blue">闭源</Tag>
         ) : (
           <Tag>未确认</Tag>
         ),
     },
     {
-      title: "综合分",
+      title: "多数对决积分",
       dataIndex: "composite",
       width: 110,
-      sorter: (a, b) => (a.composite ?? -1) - (b.composite ?? -1),
+      sorter: (a, b) =>
+        (a.composite ?? -1) - (b.composite ?? -1) ||
+        (a.auxiliary ?? -1) - (b.auxiliary ?? -1),
       render: (v, r) =>
         v == null ? (
           <Tooltip title={r.reason}>
@@ -634,7 +537,7 @@ function App() {
           </Tooltip>
         ) : (
           <Tooltip
-            title={`综合能力 ${r.composite.toFixed(2)}；有效覆盖 ${r.available.length} 榜，不额外加分`}
+            title={`${r.record.wins} 胜 / ${r.record.draws} 平 / ${r.record.losses} 负，${r.record.opponents} 个对手；不是能力百分比`}
           >
             <strong className="number text-[12px] tabular-nums whitespace-nowrap">
               {v.toFixed(1)}
@@ -732,53 +635,10 @@ function App() {
         <h2>比较口径</h2>
         <SettingOutlined aria-hidden="true" />
       </div>
-      <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
-        权重预设
-      </label>
-      <Select
-        virtual={false}
-        aria-label="权重预设"
-        value={preset}
-        onChange={changePreset}
-        options={[
-          ...Object.entries(PRESETS).map(([value, v]) => ({
-            value,
-            label: v.label,
-          })),
-          { value: "custom", label: "自定义权重", disabled: true },
-        ]}
-      />
-      <p className="control-help text-[10px] leading-[1.85] text-[#8a9aa4] mt-0 mb-[17px] max-760:col-span-full max-760:mt-[2px] max-760:mb-[10px] max-760:text-[9px]">
-        能力优先：AA 40%、Vals 35%、LiveBench 25%；可切换等权验证结论。
+      <p className="control-help text-[11px] leading-[1.9] max-760:col-span-full">
+        多数对决：AA、Vals、LiveBench
+        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。主积分相同才用辅助分排序；实际对手集合可能不同，原始分差不混入积分。
       </p>
-      <div className="weights max-760:col-span-full max-760:grid max-760:grid-cols-2 max-760:gap-y-[3px] max-760:gap-x-[24px]">
-        {Object.entries(NAMES).map(([key, name]) => (
-          <div key={key}>
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor={"weight-" + key}
-                className="block text-[11px] text-[#4c6574] font-medium m-0 max-760:text-[10px]"
-              >
-                {name}
-              </label>
-              <span className="text-[10px] font-[550] text-[#6c8c8a] tabular-nums bg-[#f0f7f4] py-[2px] px-[6px] rounded-[4px]">
-                {total ? Math.round((weights[key] / total) * 100) : 0}%
-              </span>
-            </div>
-            <Slider
-              id={"weight-" + key}
-              aria-label={name + " 权重"}
-              min={0}
-              max={100}
-              value={weights[key]}
-              onChange={(v) => {
-                setPreset("custom");
-                setWeights({ ...weights, [key]: v });
-              }}
-            />
-          </div>
-        ))}
-      </div>
       <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-760:my-[6px] max-760:col-span-full" />
       <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
         成本来源
@@ -832,22 +692,6 @@ function App() {
       <p className="control-help text-[10px] leading-[1.85] text-[#8a9aa4] mt-0 mb-[17px] max-760:col-span-full max-760:mt-[2px] max-760:mb-[10px] max-760:text-[9px]">
         按所选来源的真实美元任务成本隐藏超出预算的模型；未披露或不可核对该来源成本的模型一并隐藏。只改变显示，不改变分数与名次；综合相对成本不是美元预算。
       </p>
-      <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
-        最低榜单覆盖
-      </label>
-      <Select
-        virtual={false}
-        aria-label="最低榜单覆盖"
-        value={Math.min(minSources, enabled) || 1}
-        onChange={setMinSources}
-        options={Array.from({ length: Math.max(1, enabled) }, (_, i) => ({
-          value: i + 1,
-          label:
-            i + 1 === enabled
-              ? `全部 ${enabled} 榜 · 严格比较`
-              : `至少 ${i + 1} 榜 · 探索模式`,
-        }))}
-      />
       <div className="flex items-center justify-between gap-[8px] text-[10px] text-[#718794] my-[17px] max-760:col-span-full max-760:my-[8px]">
         <span>允许 AA 估算分数</span>
         <Switch
@@ -1108,7 +952,7 @@ function App() {
             },
             {
               key: "stability",
-              label: "权重敏感性",
+              label: "成本敏感性",
               icon: <ControlOutlined aria-hidden="true" />,
             },
             {
@@ -1120,17 +964,8 @@ function App() {
         />
         <div className="scoring-context">
           <span className="flex items-center gap-[8px] flex-wrap">
-            <SettingOutlined aria-hidden="true" />{" "}
-            {PRESETS[preset]?.label ?? "自定义权重"} ·{" "}
-            {Object.entries(weights)
-              .filter(([, v]) => v > 0)
-              .map(
-                ([key, v]) =>
-                  `${key === "livebench" ? "LB" : key.toUpperCase()} ${total ? Math.round((v / total) * 100) : 0}%`,
-              )
-              .join(" / ")}{" "}
-            · 至少 {analysis.required} 榜 ·{" "}
-            {estimated ? "允许估算" : "排除估算"}
+            <SettingOutlined aria-hidden="true" /> 多数对决积分 · 三榜各一票 ·
+            至少 {analysis.required} 榜 · {estimated ? "允许估算" : "排除估算"}
             {excludeHistorical ? " · 排除历史" : ""}
             {excludeStale ? " · 排除过期缓存" : ""}
           </span>
@@ -1182,7 +1017,6 @@ function App() {
             }
             budget={budget}
             excludeStale={excludeStale}
-            scopeDiff={scopeDiff}
             exportMeta={exportMeta}
           />
         )}
@@ -1220,27 +1054,7 @@ function App() {
                     ]}
                   />
                 </div>
-                {analysis.required < enabled && (
-                  <Alert
-                    className="chart-notice"
-                    type="info"
-                    title="扩展比较：缺分不补零，按已有榜单权重评分。覆盖度独立展示，不额外加分；可切回严格模式复核。"
-                    showIcon
-                  />
-                )}
-                {scopeDiff &&
-                  (scopeDiff.frontierChanges.length > 0 ||
-                    scopeDiff.shifts.some((s) => Math.abs(s.shift) >= 5)) && (
-                    <Alert
-                      className="chart-notice"
-                      type="info"
-                      showIcon
-                      title={`覆盖口径提示：与严格 ${scopeDiff.strictMin} 榜口径相比，${scopeDiff.shiftCount} 个模型名次变化、${scopeDiff.frontierChanges.length} 个前沿成员身份不同；融合排行榜页可查看明细。`}
-                    />
-                  )}
-                {enabled === 0 ? (
-                  <Empty description="至少启用一个榜单" />
-                ) : !data ? (
+                {!data ? (
                   <div className="h-[448px] flex flex-col items-center justify-center text-[#8c9ba5] text-[12px]">
                     <Spin />
                     <p>正在读取模型数据…</p>
@@ -1256,7 +1070,9 @@ function App() {
                   />
                 ) : (
                   <div className="h-[448px] flex flex-col items-center justify-center text-[#8c9ba5] text-[12px]">
-                    <Empty description="当前口径没有可入图模型。可切换成本来源，或选择广覆盖双榜。" />
+                    <Empty
+                      description={`正式对决需要至少 ${analysis.required} 榜共同有效的对手及有效成本；票数不足的模型可在排行榜查看原始分。`}
+                    />
                   </div>
                 )}
               </div>
@@ -1328,56 +1144,18 @@ function App() {
         {tab === "stability" && (
           <section className="panel p-[26px] max-760:py-[21px] max-760:px-[17px]">
             <div>
-              <h2>结论对权重敏感吗？</h2>
+              <h2>结论对成本口径敏感吗？</h2>
               <p className="text-[12px] leading-[1.9] text-[#82949f] max-w-[900px] max-760:text-[11px]">
-                三套预设分别重算完整覆盖样本。没有“一套权重证明的绝对最强”，只报告模型在哪些口径进入前沿。
+                固定两榜多数对决规则，分别用综合相对成本、AA、Vals、LiveBench
+                任务成本重算前沿。这里不使用推荐性的倾斜权重。
               </p>
             </div>
-            <div className="preset-cards grid grid-cols-[repeat(3,1fr)] gap-[17px] my-[23px] max-1180:grid-cols-[1fr]">
-              {comparisons.map((c) => (
-                <div
-                  key={c.key}
-                  className="border border-[#e5ecef] rounded-[11px] p-[21px] bg-[linear-gradient(160deg,#f8fbfa,#fff_65%)] max-760:p-[18px]"
-                >
-                  <Tag color={c.key === "capability" ? "green" : "default"}>
-                    {c.label}
-                  </Tag>
-                  <p className="text-[10px] text-[#8a9ca4] leading-[1.9]">
-                    {Object.entries(PRESETS[c.key].weights)
-                      .map(([s, w]) => `${NAMES[s]} ${Number(w.toFixed(1))}%`)
-                      .join(" / ")}
-                  </p>
-                  <strong className="block text-[17px] font-[550] my-[19px]">
-                    {c.rows.filter((r) => r.openFrontier).length} 个开放权重前沿
-                  </strong>
-                  <div>
-                    {c.rows
-                      .filter((r) => r.openFrontier)
-                      .map((r) => (
-                        <button
-                          key={r.id}
-                          onClick={() => setSelected(r.id)}
-                          className="flex justify-between items-center gap-[12px] w-full py-[11px] px-[12px] border border-[#e5efea] rounded-[7px] bg-[#f5faf7] text-[#4c8b75] text-left text-[12px] mb-[7px] cursor-pointer hover:bg-[#eaf5ee]"
-                        >
-                          {r.name}
-                          <ExportOutlined aria-hidden="true" />
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="muted text-[11px] text-[#6b818f] leading-[1.85]">
-              成本来源：{COSTS[costSource]}
-              。三套预设使用同一组榜单和完整覆盖样本。这是口径敏感性比较，不是统计显著性检验。
-            </p>
-            <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-760:my-[6px]" />
             <div>
               <h2>前沿稳定性指数</h2>
               <p className="text-[12px] leading-[1.9] text-[#82949f] max-w-[900px] max-760:text-[11px]">
                 固定同一批 {stability.cohort}{" "}
-                个模型：要求三榜有效分数和三源任务成本齐全。三套能力权重 ×
-                四种成本口径，共 12 个场景；指数为入选次数 / 12 ×
+                个模型：要求三榜有效分数和三源任务成本齐全。固定评分公式 ×
+                四种成本口径，共 4 个场景；指数为入选次数 / 4 ×
                 100。不在样本中的模型不记为零。
               </p>
             </div>
@@ -1405,7 +1183,7 @@ function App() {
                   dataIndex: "globalIndex",
                   sorter: (a, b) => a.globalIndex - b.globalIndex,
                   render: (v, r) =>
-                    `${v.toFixed(0)} / 100（${r.globalCount}/12）`,
+                    `${v.toFixed(0)} / 100（${r.globalCount}/4）`,
                 },
                 {
                   title: "开放前沿稳定性",
@@ -1414,7 +1192,7 @@ function App() {
                   render: (v, r) =>
                     v == null
                       ? "不适用"
-                      : `${v.toFixed(0)} / 100（${r.openCount}/12）`,
+                      : `${v.toFixed(0)} / 100（${r.openCount}/4）`,
                 },
                 {
                   title: "入选场景",
@@ -1423,10 +1201,7 @@ function App() {
                       title={
                         r.scenarios
                           .filter((s) => (r.openWeights ? s.open : s.global))
-                          .map(
-                            (s) =>
-                              `${PRESETS[s.preset].label} / ${COSTS[s.costSource]}`,
-                          )
+                          .map((s) => `三榜各一票 / ${COSTS[s.costSource]}`)
                           .join("；") || "无"
                       }
                     >
@@ -1439,7 +1214,7 @@ function App() {
               ]}
             />
             <p className="muted text-[11px] text-[#6b818f] leading-[1.85]">
-              这是对已列出的 12
+              这是对已列出的 4
               种设定的稳健性描述，不是“模型最优的概率”，也不是统计置信度。不同前沿模型可能代表不同预算与能力取舍，不按单一指数替代二维图。
             </p>
           </section>
@@ -1672,9 +1447,8 @@ function App() {
                 </thead>
                 <tbody>
                   {["composite", "aa", "vals", "livebench"].map((source) => {
-                    const a = analyze(evaluationModels, weights, {
+                    const a = analyze(evaluationModels, {
                       costSource: source,
-                      minSources,
                       includeEstimated: estimated,
                       costSources: activeCostSources,
                     }).rows.find((r) => r.id === current.id);
@@ -1878,35 +1652,30 @@ function App() {
         lastRefresh={data?.lastRefresh}
       />
       <Drawer
-        title="方法、权重与边界"
+        title="计算方法与边界"
         open={methodOpen}
         onClose={() => setMethodOpen(false)}
         width={650}
       >
         <article className="method">
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
-            如何设置三榜权重？
+            如何确定每榜票数？
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            默认 AA 40%、Vals 35%、LiveBench
-            25%，兼顾通用能力和任务实践。另有三榜等权及任务实践优先，便于检验结论对权重的敏感性。这是可调整的分析判断，不声称是经验证明的最优权重，也不用网站流量估计评测质量。Arena
-            的偏好投票与任务能力是不同信号；为保证无人值守刷新，此应用已移除其采集和评分。
+            采用多数对决，三榜各一票，不提供任意权重推荐。所有页面和分享链接统一使用当前规则。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             如何计算综合分？
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            先按当前启用榜单和最低覆盖门槛选择基准样本；每榜对有效原始分排序，并列取平均名次。排名分数
-            = 100 × (N − r) / (N − 1)，单模型样本记为 50。按非零权重加权得到
-            0–100
-            相对分数，不叠加覆盖奖励。排名保留顺序、舍弃原始分差，不是正确率。
+            默认至少两榜准入。每对模型共同有效榜单不少于两榜才比赛，每榜一票；领先榜数多者胜，相同则平局，票数不足不计入分母。积分
+            = 100 ×（胜场 + 0.5 × 平场）÷ 实际有效对手数，无有效对手不赋分。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            默认至少 2
-            榜。覆盖度仅作为证据信息展示，不参与能力分数。多榜提及不自动等同于独立证据，也不推导统计可信概率。
+            多数意见可能循环，直接交手获胜不保证总积分更高。积分表示对当前样本的对决成绩，不是正确率或能力百分比。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。最终主积分相同才按已有榜单排名百分位的等权平均辅助分排序；主辅分都相同保持并列。对手集合可能不同，积分可比性弱于完整三榜样本。对比页展示票数、原始分与分差，不直接混分。辅助分不参与帕累托纵轴或支配判断。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            严格模式要求全部启用榜单都有有效分数。探索模式允许不完整覆盖，在各榜可用样本内归一化，再对模型已有权重重新分配，因此不同模型比较依据可能不一致。部分覆盖使用信息图标标注，只适合发现候选。切换模型显示范围或搜索不会重算分数及前沿；更改权重、榜单、覆盖门槛或估算开关会重算。
+            搜索、厂商、预算只改变显示；成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             为何更关注开放权重？
@@ -1949,8 +1718,8 @@ function App() {
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">分享与复核</h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            「复制分享链接」把当前权重、覆盖门槛、估算与质量排除开关、成本口径、预算筛选、排行榜筛选和对比选择写入页面地址；打开同一链接即在同一口径下复核结论。CSV
-            导出附带数据时间与完整评分口径，数据本身以快照时间为准。排行榜页的「覆盖口径差异」面板并排展示严格口径与探索口径的名次与前沿成员差异：差异来自比较样本与权重再分配，不代表模型能力变化。
+            「复制分享链接」把当前估算与质量排除开关、成本口径、预算筛选、排行榜筛选和对比选择写入页面地址；全默认设置也按完整分享恢复，不沿用接收方偏好。CSV
+            导出附带数据时间与完整评分口径，数据本身以快照时间为准。评分固定至少两榜准入；估算或质量排除设置改变样本时会重算排名，不代表模型能力变化。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             版本与统计边界

@@ -44,26 +44,13 @@ test("missing-source models remain visible but cannot silently enter strict fron
     [
       model("a", { aa: { score: 10, costTask: 1 }, livebench: { score: 50 } }),
       model("b", { aa: { score: 20, costTask: 0.5 } }),
+      model("c", { aa: { score: 5, costTask: 1 }, livebench: { score: 40 } }),
     ],
-    { aa: 50, livebench: 50 },
-    { minSources: 2, costSource: "aa" },
+    { costSource: "aa" },
   );
   assert.equal(r.rows[1].composite, null);
   assert.equal(r.rows[1].plottable, false);
   assert.equal(r.rows[0].frontier, true);
-});
-test("exploration weights renormalize and are marked incomplete", () => {
-  const m = [
-    model("a", { aa: { score: 10, costTask: 1 }, livebench: { score: 50 } }),
-    model("b", { aa: { score: 20, costTask: 0.5 } }),
-  ];
-  const r = analyze(
-    m,
-    { aa: 80, livebench: 20 },
-    { minSources: 1, costSource: "aa" },
-  );
-  assert.equal(r.rows[1].composite, 100);
-  assert.equal(r.rows[1].complete, false);
 });
 test("cost origin changes frontier without changing scores", () => {
   const m = [
@@ -76,16 +63,8 @@ test("cost origin changes frontier without changing scores", () => {
       vals: { score: 20, costTask: 1 },
     }),
   ];
-  const a = analyze(
-    m,
-    { aa: 50, vals: 50 },
-    { minSources: 2, costSource: "aa" },
-  );
-  const v = analyze(
-    m,
-    { aa: 50, vals: 50 },
-    { minSources: 2, costSource: "vals" },
-  );
+  const a = analyze(m, { costSource: "aa" });
+  const v = analyze(m, { costSource: "vals" });
   assert.deepEqual(
     a.rows.map((r) => r.composite),
     v.rows.map((r) => r.composite),
@@ -96,9 +75,11 @@ test("cost origin changes frontier without changing scores", () => {
 test("zero and missing costs never appear on logarithmic chart", () => {
   for (const cost of [0, null, undefined]) {
     const r = analyze(
-      [model("a", { aa: { score: 10, costTask: cost } })],
-      { aa: 100 },
-      { minSources: 1, costSource: "aa" },
+      [
+        model("a", { aa: { score: 10, costTask: cost }, vals: { score: 10 } }),
+        model("b", { aa: { score: 20, costTask: 1 }, vals: { score: 20 } }),
+      ],
+      { costSource: "aa" },
     );
     assert.equal(r.rows[0].plottable, false);
   }
@@ -106,11 +87,18 @@ test("zero and missing costs never appear on logarithmic chart", () => {
 test("open frontier is separately computed against open models", () => {
   const r = analyze(
     [
-      model("open", { aa: { score: 10, costTask: 1 } }, true),
-      model("closed", { aa: { score: 20, costTask: 0.5 } }, false),
+      model(
+        "open",
+        { aa: { score: 10, costTask: 1 }, vals: { score: 10 } },
+        true,
+      ),
+      model(
+        "closed",
+        { aa: { score: 20, costTask: 0.5 }, vals: { score: 20 } },
+        false,
+      ),
     ],
-    { aa: 100 },
-    { minSources: 1, costSource: "aa" },
+    { costSource: "aa" },
   );
   assert.equal(r.rows[0].frontier, false);
   assert.equal(r.rows[0].openFrontier, true);
@@ -173,11 +161,10 @@ test("CSV export neutralizes spreadsheet formula injection", () => {
 test("dominator explanation is independent of alphabetical iteration order", () => {
   const r = analyze(
     [
-      model("a", { aa: { score: 10, costTask: 2 } }),
-      model("z", { aa: { score: 20, costTask: 1 } }),
+      model("a", { aa: { score: 10, costTask: 2 }, vals: { score: 10 } }),
+      model("z", { aa: { score: 20, costTask: 1 }, vals: { score: 20 } }),
     ],
-    { aa: 100 },
-    { minSources: 1, costSource: "aa" },
+    { costSource: "aa" },
   );
   assert.deepEqual(r.rows[0].dominatedBy, ["z"]);
 });
@@ -234,18 +221,14 @@ test("missing-source costs are not imputed or reweighted into combined cost", ()
       vals: { score: 2, costTask: 2 },
     }),
   ];
-  const r = analyze(
-    a,
-    { aa: 100 },
-    { minSources: 1, costSource: "composite", costMinSources: 3 },
-  );
+  const r = analyze(a, { costSource: "composite", costMinSources: 3 });
   assert.equal(r.costProfile.count, 1);
   assert.equal(r.rows[0].cost, 100);
   assert.equal(r.rows[1].cost, null);
   assert.equal(r.rows[1].plottable, false);
 });
 
-test("frontier stability uses identical complete cohort and reports a 12-scenario frequency", () => {
+test("frontier stability uses identical complete cohort and reports a 4-scenario frequency", () => {
   const a = [
     model("a", {
       aa: { score: 10, costTask: 1 },
@@ -262,13 +245,13 @@ test("frontier stability uses identical complete cohort and reports a 12-scenari
   const r = frontierStability(a);
   assert.equal(r.cohort, 2);
   assert.equal(r.rows.length, 2);
-  assert.equal(r.scenarioCount, 12);
+  assert.equal(r.scenarioCount, 4);
   assert.ok(
     r.rows.every(
       (r) =>
         r.globalIndex === 100 &&
         r.openIndex === 100 &&
-        r.scenarios.length === 12,
+        r.scenarios.length === 4,
     ),
   );
 });
@@ -296,11 +279,11 @@ test("default two-source cost allows a partial geometric mean but marks its cove
       vals: { score: 20, costTask: 4 },
     }),
   ];
-  const r = analyze(m, { aa: 50, vals: 50 });
+  const r = analyze(m);
   assert.equal(r.rows[1].costCoverage, 2);
   assert.ok(Math.abs(r.rows[1].cost - 50) < 1e-8);
   assert.equal(r.rows[1].plottable, true);
-  assert.equal(r.rows[1].complete, true);
+  assert.equal(r.rows[1].complete, false);
 });
 test("extra source mentions cannot raise an objectively lowest scoring model", () => {
   const full = (score) => ({
@@ -316,11 +299,7 @@ test("extra source mentions cannot raise an objectively lowest scoring model", (
     }),
     model("highest", full(30)),
   ];
-  const result = analyze(
-    models,
-    { aa: 40, vals: 35, livebench: 25 },
-    { minSources: 2, costSource: "aa" },
-  );
+  const result = analyze(models, { costSource: "aa" });
   assert.deepEqual(
     result.rows.map((r) => r.composite),
     [0, 50, 100],
@@ -328,44 +307,18 @@ test("extra source mentions cannot raise an objectively lowest scoring model", (
   assert.equal(Object.hasOwn(result.rows[0], "coverageBonus"), false);
 });
 
-test("retired source preferences migrate without changing the remaining custom settings", async () => {
-  const { migratePreferences, PRESETS } = await import("../src/analysis.mjs");
-  const legacy = {
-    preset: "capability",
-    weights: { arena: 10, aa: 35, vals: 30, livebench: 25 },
-    minSources: 4,
-    focus: "openOnly",
-    costSource: "vals",
-  };
-  const migrated = migratePreferences(legacy);
-  assert.deepEqual(migrated.weights, PRESETS.capability.weights);
-  assert.equal(migrated.minSources, 3);
-  assert.equal(migrated.focus, "openOnly");
-  assert.equal(migrated.costSource, "vals");
-  assert.deepEqual(
-    migratePreferences({
-      ...legacy,
-      preset: "custom",
-      weights: { arena: 90, aa: 5, vals: 5 },
-    }).weights,
-    { aa: 5, vals: 5, livebench: 0 },
-  );
-  assert.deepEqual(
-    migratePreferences({ preset: "custom", weights: { arena: 100 } }).weights,
-    PRESETS.capability.weights,
-  );
-});
-
-import { scopeComparison } from "../src/analysis.mjs";
 test("csv export attaches data time and scoring scope for later review", () => {
   const csv = csvExport(
     [{ name: "a", creator: "x", available: [], representatives: {} }],
-    { lastRefresh: "2026-10-16T02:05:53.568Z", scope: "能力优先 · 至少 2 榜" },
+    {
+      lastRefresh: "2026-10-16T02:05:53.568Z",
+      scope: "两榜多数对决 · 至少 2 榜",
+    },
   );
   assert.ok(csv.includes("数据时间"));
   assert.ok(csv.includes("2026-10-16T02:05:53.568Z"));
   assert.ok(csv.includes("评分口径"));
-  assert.ok(csv.includes("能力优先 · 至少 2 榜"));
+  assert.ok(csv.includes("两榜多数对决 · 至少 2 榜"));
 });
 test("csv export leaves the data time empty instead of throwing on a corrupted timestamp", () => {
   const csv = csvExport(
@@ -374,106 +327,4 @@ test("csv export leaves the data time empty instead of throwing on a corrupted t
   );
   assert.ok(csv.includes("数据时间"));
   assert.ok(!csv.includes("Invalid"));
-});
-test("scope comparison contrasts strict all-source ranking with exploration threshold", () => {
-  const full = (aa, vals, lb, cost) => ({
-    aa: { score: aa, costTask: cost },
-    vals: { score: vals, costTask: cost },
-    livebench: { score: lb, costTask: cost },
-  });
-  const models = [
-    model("top", full(100, 100, 100, 5)),
-    model("mid", full(85, 85, 10, 1)),
-    model("partial", {
-      aa: { score: 90, costTask: 0.5 },
-      vals: { score: 90, costTask: 0.5 },
-    }),
-  ];
-  const r = scopeComparison(
-    models,
-    { aa: 40, vals: 35, livebench: 25 },
-    { minSources: 2, costSource: "aa" },
-  );
-  assert.equal(r.strictMin, 3);
-  assert.equal(r.exploreMin, 2);
-  assert.equal(r.strictCohort, 2);
-  assert.equal(r.exploreCohort, 3);
-  assert.deepEqual(
-    r.onlyExploration.map((x) => x.name),
-    ["partial"],
-  );
-  assert.deepEqual(
-    r.shifts.map((x) => [x.name, x.strictRank, x.exploreRank]),
-    [["mid", 2, 3]],
-  );
-  assert.deepEqual(
-    r.frontierChanges.map((x) => [x.name, x.strict, x.explore]).sort(),
-    [
-      ["mid", "全球前沿", "未入前沿"],
-      ["partial", "未入前沿", "全球前沿"],
-    ],
-  );
-});
-test("strict views still contrast the loosest exploration; single source has no scope split", () => {
-  const models = [model("a", { aa: { score: 10, costTask: 1 } })];
-  assert.equal(
-    scopeComparison(models, { aa: 100 }, { minSources: 1, costSource: "aa" }),
-    null,
-  );
-  const pair = [
-    model("a", {
-      aa: { score: 10, costTask: 1 },
-      vals: { score: 10, costTask: 1 },
-    }),
-    model("b", {
-      aa: { score: 20, costTask: 1 },
-      vals: { score: 20, costTask: 1 },
-    }),
-  ];
-  const r = scopeComparison(
-    pair,
-    { aa: 50, vals: 50 },
-    { minSources: 2, costSource: "aa" },
-  );
-  assert.equal(r.strictMin, 2);
-  assert.equal(r.exploreMin, 1);
-  assert.equal(r.shiftCount, 0);
-  assert.deepEqual(r.frontierChanges, []);
-});
-test("scope comparison gives tied composites the same rank and never reports undefined positions", () => {
-  const full = (aa, vals, lb, cost) => ({
-    aa: { score: aa, costTask: cost },
-    vals: { score: vals, costTask: cost },
-    livebench: { score: lb, costTask: cost },
-  });
-  const models = [
-    model("top", full(100, 100, 100, 5)),
-    model("tie1", full(50, 50, 50, 2)),
-    model("tie2", full(50, 50, 50, 3)),
-    model("partial", {
-      aa: { score: 60, costTask: 0.5 },
-      vals: { score: 60, costTask: 0.5 },
-    }),
-  ];
-  const r = scopeComparison(
-    models,
-    { aa: 40, vals: 35, livebench: 25 },
-    { minSources: 2, costSource: "aa" },
-  );
-  assert.deepEqual(
-    r.onlyExploration.map((x) => x.name),
-    ["partial"],
-  );
-  assert.ok(
-    r.shifts.every(
-      (x) => Number.isFinite(x.strictRank) && Number.isFinite(x.exploreRank),
-    ),
-  );
-  assert.deepEqual(
-    r.shifts.map((x) => [x.name, x.strictRank, x.exploreRank]).sort(),
-    [
-      ["tie1", 2, 3],
-      ["tie2", 2, 3],
-    ],
-  );
 });

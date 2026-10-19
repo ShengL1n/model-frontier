@@ -24,13 +24,12 @@ const model = (id, representatives, extra = {}) => ({
 test("fusion ranking includes scored models without costs and preserves ties and unscored records", () => {
   const a = analyze(
     [
-      model("a", { aa: { score: 20 } }),
-      model("b", { aa: { score: 20, costTask: 1 } }),
-      model("c", { aa: { score: 10, costTask: 1 } }),
+      model("a", { aa: { score: 20 }, vals: { score: 20 } }),
+      model("b", { aa: { score: 20, costTask: 1 }, vals: { score: 20 } }),
+      model("c", { aa: { score: 10, costTask: 1 }, vals: { score: 10 } }),
       model("unscored", {}),
     ],
-    { aa: 100 },
-    { minSources: 1, costSource: "aa" },
+    { costSource: "aa" },
   );
   const ranked = rankedModels(a.rows);
   assert.deepEqual(

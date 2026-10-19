@@ -6,14 +6,18 @@ export function rankedModels(rows) {
   const sorted = [...rows].sort(
     (a, b) =>
       (b.composite ?? -Infinity) - (a.composite ?? -Infinity) ||
+      (b.auxiliary ?? -Infinity) - (a.auxiliary ?? -Infinity) ||
       a.name.localeCompare(b.name),
   );
   let last = null,
+    lastAuxiliary = null,
     rank = null;
   return sorted.map((r, i) => {
     if (Number.isFinite(r.composite)) {
-      if (last !== r.composite) rank = i + 1;
+      if (last !== r.composite || lastAuxiliary !== (r.auxiliary ?? null))
+        rank = i + 1;
       last = r.composite;
+      lastAuxiliary = r.auxiliary ?? null;
       return { ...r, rank };
     }
     return { ...r, rank: null };

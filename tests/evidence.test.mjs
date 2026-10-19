@@ -81,10 +81,7 @@ test("unknown source release date does not make a fresh cache stale", () => {
 test("quality defaults preserve models and scoring exactly", () => {
   const models = [model({ aa: [row("Test")], vals: [row("Test")] })];
   assert.equal(applyEvidencePolicy(models, {}), models);
-  assert.deepEqual(
-    analyze(applyEvidencePolicy(models, {}), { aa: 50, vals: 50 }),
-    analyze(models, { aa: 50, vals: 50 }),
-  );
+  assert.deepEqual(analyze(applyEvidencePolicy(models, {})), analyze(models));
 });
 test("historical exclusions reselect a valid variant and retain raw data without mutating it", () => {
   const m = model({
@@ -107,11 +104,9 @@ test("failed source removal applies equally to ability and task costs; models re
   const filtered = applyEvidencePolicy([m], sources, { excludeStale: true })[0];
   assert.equal(filtered.representatives.livebench, undefined);
   assert.equal(filtered.representatives.aa.score, 50);
-  const a = analyze(
-    [filtered],
-    { aa: 40, vals: 35, livebench: 25 },
-    { minSources: 2, costSources: ["aa", "vals"] },
-  );
+  const a = analyze([filtered, { ...filtered, id: "peer", name: "peer" }], {
+    costSources: ["aa", "vals"],
+  });
   assert.equal(a.rows[0].costCoverage, 2);
   assert.equal(a.rows[0].plottable, true);
   assert.equal(a.rows[0].cost, 100);

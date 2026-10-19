@@ -45,9 +45,9 @@ const LEGEND = [
 const LEGEND_MARKERS = {
   open: "relative inline-block mx-[1px] h-[8px] w-[8px] shrink-0 rotate-45 bg-[#128574]",
   closed:
-    "relative inline-block h-[10px] w-[10px] shrink-0 rounded-full bg-[#a4b6c6]",
+    "relative inline-block h-[10px] w-[10px] shrink-0 rounded-full bg-[#3267b8]",
   global:
-    "relative inline-block h-0 w-[19px] shrink-0 [border-top:2px_dashed_#8398ad]",
+    "relative inline-block h-0 w-[19px] shrink-0 [border-top:2px_dashed_#3267b8]",
   frontier:
     "relative inline-block h-0 w-[19px] shrink-0 [border-top:2px_solid_#128574]",
 };
@@ -188,7 +188,7 @@ export default function Chart({
         distance: 10,
         fontSize: 11,
         fontWeight: 500,
-        color: r.openWeights === true ? "#0b7565" : "#526987",
+        color: r.openWeights === true ? "#0b7565" : "#234e91",
         backgroundColor: "rgba(255,255,255,.94)",
         borderColor: r.openWeights === true ? "#d8ebe6" : "#e4e9ef",
         borderWidth: 1,
@@ -261,7 +261,7 @@ export default function Chart({
             const dominated = r.dominatedBy?.length
               ? `<div class="mx-[18px] border-t border-t-[#edf1f4] px-[18px] py-[10px] text-[10px] leading-[1.7] text-[#a9635a]">被 ${esc(r.dominatedBy.slice(0, 2).join("、"))}${r.dominatedBy.length > 2 ? ` 等 ${r.dominatedBy.length} 个前沿模型` : ""}同时以更低成本、更高综合分支配</div>`
               : "";
-            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-760:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">综合能力</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> / 100</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div>${dominated}<div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
+            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-760:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">融合积分</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> / 100</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div>${dominated}<div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>能力 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
           },
         },
         legend: {
@@ -295,7 +295,7 @@ export default function Chart({
           type: "value",
           min: 0,
           max: 100,
-          name: "综合能力分数",
+          name: "融合积分",
           nameTextStyle: {
             color: "#657b8b",
             fontSize: 11,
@@ -348,7 +348,7 @@ export default function Chart({
           line(
             "全球前沿",
             (r) => r.frontier,
-            "#8398ad",
+            "#3267b8",
             true,
             "global-frontier",
           ),
@@ -359,13 +359,13 @@ export default function Chart({
             data: closed.map(point),
             symbolSize: 10,
             itemStyle: {
-              color: "#a4b6c6",
-              opacity: focus === "openFirst" ? 0.55 : 0.8,
+              color: "#3267b8",
+              opacity: 1,
             },
             labelLayout: { hideOverlap: true, moveOverlap: "shiftY" },
             emphasis: {
               scale: 1.5,
-              itemStyle: { opacity: 1, color: "#627e9a" },
+              itemStyle: { opacity: 1, color: "#234e91" },
             },
             z: 3,
           },

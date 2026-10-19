@@ -2168,7 +2168,7 @@ a {
   }
 }
 
-/* 能力维度、预算筛选与覆盖口径差异 */
+/* 能力维度与预算筛选 */
 
 .budget-line {
   display: flex;
@@ -2190,58 +2190,7 @@ a {
   color: #8a6d3b;
 }
 
-.scope-diff {
-  margin: 0 20px 16px;
-  padding: 14px 16px;
-  border: 1px solid #dfe8e8;
-  border-radius: 9px;
-  background: #f7faf9;
-  font-size: 11px;
-  line-height: 1.9;
-  color: #526f70;
-}
-
-.scope-diff-head {
-  display: flex;
-  gap: 14px;
-  align-items: baseline;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-
-.scope-diff-head b {
-  font-size: 12px;
-  color: #3c5b56;
-}
-
-.scope-diff .ant-table {
-  margin: 10px 0 4px;
-}
-
-.scope-diff .model-link {
-  font-size: 11px;
-}
-
-.scope-diff .number.up {
-  color: #0c806e;
-}
-
-.scope-diff .number.down {
-  color: #b0773f;
-}
-
-.model-link.inline {
-  display: inline;
-  padding: 0;
-  font-size: 11px;
-}
-
 @media (width <= 760px) {
-  .scope-diff {
-    margin: 0 14px 14px;
-    padding: 12px;
-  }
-
   .budget-line {
     flex-direction: column;
     align-items: stretch;

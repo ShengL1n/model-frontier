@@ -35,11 +35,19 @@ try {
       }),
     ),
   );
+  await page.evaluate(() => history.replaceState(null, "", location.pathname));
   await page.reload();
   await page.waitForFunction(() => {
     const p = JSON.parse(localStorage.getItem("frontier:preferences"));
-    return p.weights.aa === 40 && !("arena" in p.weights) && p.minSources === 3;
+    return p && !("weights" in p) && !("preset" in p) && !("minSources" in p);
   });
+  assert.equal(
+    await page.evaluate(() =>
+      localStorage.getItem("frontier:legacy-preferences"),
+    ),
+    null,
+    "不再为评分兼容创建偏好备份",
+  );
   await page.getByRole("tab", { name: "前沿探索", exact: true }).click();
   await page.getByRole("heading", { name: "综合能力 / 成本前沿" }).waitFor();
   await page.locator("canvas").waitFor();
@@ -116,6 +124,13 @@ try {
   const legend = page
     .locator(".chart-legend")
     .getByRole("button", { name: "闭源 / 未确认", exact: true });
+  assert.equal(
+    await legend
+      .locator("span")
+      .evaluate((e) => getComputedStyle(e).backgroundColor),
+    "rgb(50, 103, 184)",
+  );
+  assert.equal(await legend.evaluate((e) => getComputedStyle(e).opacity), "1");
   await legend.click();
   assert.equal(await legend.getAttribute("aria-pressed"), "false");
   await legend.click();
@@ -129,8 +144,14 @@ try {
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.getByLabel("搜索模型", { exact: true }).fill("");
-  await choose("权重预设", "广覆盖双榜");
-  await page.getByText("全部 2 榜 · 严格比较", { exact: true }).waitFor();
+  await page
+    .locator(".scoring-context")
+    .getByText(/至少 2 榜/)
+    .waitFor();
+  assert.equal(
+    await page.getByRole("combobox", { name: "权重预设", exact: true }).count(),
+    0,
+  );
   const csvPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出 CSV", exact: true }).click();
   const download = await csvPromise;
@@ -139,16 +160,14 @@ try {
   assert.ok(csv.includes("MiMo"));
   assert.ok(csv.includes("开放权重前沿"));
   await choose("成本来源", "Vals 每次测试成本");
-  await choose("最低榜单覆盖", "至少 1 榜 · 探索模式");
-  await page.getByText(/扩展比较：缺分不补零/).waitFor();
-  await page.getByRole("tab", { name: "权重敏感性", exact: true }).click();
+  await page.getByRole("tab", { name: "成本敏感性", exact: true }).click();
   await page
-    .getByRole("heading", { name: "结论对权重敏感吗？", exact: true })
+    .getByRole("heading", { name: "结论对成本口径敏感吗？", exact: true })
     .waitFor();
   await page
     .getByRole("heading", { name: "前沿稳定性指数", exact: true })
     .waitFor();
-  assert.equal(await page.locator(".preset-cards>div").count(), 3);
+  assert.equal(await page.locator(".preset-cards>div").count(), 0);
   await page.getByRole("tab", { name: "数据来源与刷新", exact: true }).click();
   assert.equal(await page.locator(".source-card").count(), 3);
   await page.getByText("703 条源站模型配置", { exact: false }).count();
@@ -162,12 +181,19 @@ try {
   assert.equal(rejected.status(), 403);
   await page.getByRole("button", { name: "计算方法", exact: true }).click();
   await page
-    .getByRole("heading", { name: "如何设置三榜权重？", exact: true })
+    .getByRole("heading", { name: "如何确定每榜票数？", exact: true })
     .waitFor();
+  assert.equal(
+    await page
+      .getByRole("dialog")
+      .getByText(/最低榜单覆盖/)
+      .count(),
+    0,
+    "方法说明不应引用已删除控件",
+  );
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.getByRole("tab", { name: "前沿探索", exact: true }).click();
-  await choose("权重预设", "能力优先");
   await choose("成本来源", "AA 每次任务成本");
   await page.evaluate(() => localStorage.removeItem("frontier:preferences"));
   await page.reload();
@@ -207,9 +233,9 @@ try {
           "fullscreen",
           "legend toggle",
           "detail",
-          "presets",
+          "fixed two-source scoring",
           "cost",
-          "partial coverage warning",
+          "source coverage",
           "CSV",
           "sensitivity",
           "source status",

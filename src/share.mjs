@@ -1,7 +1,6 @@
 // 可分享、可复现的比较：把评分口径、显示筛选与对比选择编码进页面锚点。
 // 编码只覆盖「影响结论口径」的状态；打开同一链接即可复核同一结论，不通过链接传递任何数据本身。
 const SOURCES = ["aa", "vals", "livebench"];
-const PRESET_KEYS = ["capability", "equal", "objective", "broad", "custom"];
 const COST_SOURCES = [...SOURCES, "composite"];
 const FOCUS_VALUES = ["openFirst", "all", "openOnly"];
 const OPENNESS_VALUES = ["all", "open", "closed", "unknown"];
@@ -11,8 +10,6 @@ const MAX_TEXT = 120;
 // 默认值不写入链接，保持分享地址尽量短；带参数的链接是完整口径状态，缺省字段一律取默认值（与 reload 恢复语义一致）。
 // 无参数的地址不视为分享链接，由应用沿用本地偏好。
 const DEFAULTS = {
-  preset: "capability",
-  minSources: 2,
   includeEstimated: false,
   excludeHistorical: false,
   excludeStale: false,
@@ -41,7 +38,6 @@ const BOOL_KEYS = {
   onlyFront: "of",
 };
 const ENUM_KEYS = {
-  preset: ["p", PRESET_KEYS],
   costSource: ["cs", COST_SOURCES],
   focus: ["f", FOCUS_VALUES],
   view: ["v", VIEWS],
@@ -70,13 +66,6 @@ export function encodeShareState(state = {}) {
   for (const [key, short] of Object.entries(BOOL_KEYS)) {
     if (state[key] === true) params.set(short, "1");
   }
-  const minSources = numberIn(
-    state.minSources ?? DEFAULTS.minSources,
-    1,
-    SOURCES.length,
-  );
-  if (Number.isInteger(minSources) && minSources !== DEFAULTS.minSources)
-    params.set("ms", String(minSources));
   // 没有有效上限的预算来源不编码：解码端会把缺 bl 的 bs 折叠为不限制，保持往返一致。
   if (
     state.budgetSource &&
@@ -89,11 +78,6 @@ export function encodeShareState(state = {}) {
       params.set("bs", state.budgetSource);
       params.set("bl", String(Number(limit.toPrecision(6))));
     }
-  }
-  if (state.preset === "custom") {
-    const weights = SOURCES.map((s) => numberIn(state.weights?.[s], 0, 100));
-    if (weights.every((v) => v != null) && weights.some((v) => v > 0))
-      params.set("w", weights.map((v) => Number(v.toPrecision(6))).join("-"));
   }
   const selection = (Array.isArray(state.selection) ? state.selection : [])
     .filter((id) => typeof id === "string" && id)
@@ -130,12 +114,6 @@ export function decodeShareState(hash = "") {
   const rawBudget = params.get("bs");
   if (rawBudget != null && BUDGET_SOURCES.includes(rawBudget))
     state.budgetSource = rawBudget;
-  const rawMin = params.get("ms");
-  const minSources =
-    rawMin != null && rawMin !== ""
-      ? numberIn(rawMin, 1, SOURCES.length)
-      : null;
-  if (minSources != null) state.minSources = Math.round(minSources);
   if (state.budgetSource && state.budgetSource !== "none") {
     const raw = params.get("bl");
     const n = Number(raw);
@@ -145,21 +123,6 @@ export function decodeShareState(hash = "") {
         : null;
     if (limit != null) state.budgetLimit = limit;
     else state.budgetSource = "none";
-  }
-  if (state.preset === "custom" || params.has("w")) {
-    const weights = String(params.get("w") ?? "")
-      .split("-")
-      .map((v) => numberIn(v, 0, 100));
-    if (
-      weights.length === SOURCES.length &&
-      weights.every((v) => v != null) &&
-      weights.some((v) => v > 0)
-    ) {
-      state.preset = "custom";
-      state.weights = Object.fromEntries(
-        SOURCES.map((s, i) => [s, weights[i]]),
-      );
-    } else if (state.preset === "custom") delete state.preset;
   }
   const selection = [
     ...new Set(
@@ -174,6 +137,7 @@ export function decodeShareState(hash = "") {
 }
 export function shareHash(page, state = {}) {
   const query = encodeShareState(state);
-  return "#" + page + (query ? "?" + query : "");
+  // 保留空查询标记，默认设置也必须按完整分享恢复，不能沿用接收方偏好。
+  return "#" + page + "?" + query;
 }
 export { DEFAULTS as SHARE_DEFAULTS };

@@ -1,13 +1,22 @@
 # Handoff
 
-最后更新：本次交付（AA 摄取修复）提交后，`main`，随后推送至 `origin/main`。面向接手会话：先读本文件，再读 `AGENTS.md` 与 `openspec/specs/`。
+最后更新：2026-10-19。接手时先读本文件、`AGENTS.md` 与 `openspec/specs/`。
 
-## 当前状态
+## 当前交付
 
-- 本地工作区干净；`dist/` 为最近一次 `npm run build` 产物，服务（`npm start`，4317 端口）运行中。
-- 全量门禁绿：81 单测、覆盖率 94.99 / 88.72 / 94.69（门禁 92 / 85 / 90）、ESLint、Prettier、stylelint、三套 E2E（`test:e2e` / `test:portal` / `test:evidence`）。
-- **AA 摄取已修复并真实刷新成功**：`data/snapshot.json` 落库 AA 704 行（379 开放权重 / 431 历史 / 473 估算 / 196 条含成本），三站均 `error: null`。
-- 数据由服务端定时刷新写入 `data/snapshot.json` / `data/history.json`；这类例行刷新按既有约定单独以 `chore:` 提交。
+本次按用户授权将全部变更提交到 main 并推送 origin/main。本文记录提交前已完成的本地验证；远端 Actions 结果以对应提交的 CI 终态为准，交付回复提供提交和运行链接。
+
+- 唯一评分规则：至少两榜有效分准入；双方至少两榜重合才对决，三榜各一票，按各榜原始分比较胜负。对决积分为 `100 × (胜场 + 0.5 × 平局) / 实际对手数`；没有实际对手时无积分与名次。最终积分相同，再按可用榜单名次百分位的等权平均辅助排序；两分均相同则并列。辅助分以精确分数求和，避免浮点加法误拆并列。
+- 主图帕累托与综合榜使用同一分析结果，以主积分和所选成本判断支配关系，辅助分不参与帕累托；成本敏感性单独使用评分和成本齐全的样本。不同模型的对手集合可能不同，页面披露实际对手数，只有单榜重合的对决不计战绩。
+- 移除旧评分公式、权重配置、最低覆盖选择与兼容迁移；旧链接的评分参数不再恢复旧算法。完整默认分享也输出带问号的状态链接，避免继承接收者本机偏好。
+- 删除覆盖口径差异面板和数据提示列；详情仍保留证据。闭源与未知散点及图例改为不透明蓝色。
+- LiveBench 支持紧凑日期与虚线日期发布、多种 CSV 布局、HTML 空壳识别；保留发布 ID 和独立显示日期映射。
+- 数据文件退出 Git（ADR-0007），本机缓存仍保留；CI 显式刷新真实数据后执行 E2E，任一来源失败即失败。
+- 六个提案归档到 `openspec/archive/2026-10-19-*/`；早期等权和三榜准入提案属于历史过程，当前规格以 ranking、share-link 与 ADR-0011 / ADR-0012 为准。
+
+## 验证证据
+
+完成两轮评审并修复默认分享状态、辅助分浮点并列与 LiveBench 日期标签三个已证实缺陷。92 个单测全过；覆盖率行 97.80%、分支 92.12%、函数 95.85%（门禁 92 / 85 / 90）；build、ESLint、Stylelint、Prettier、三套 E2E 全绿。额外随机核验 80 组、5654 次模型对决通过。生产服务已按新构建重启于 4317。源码修改后必须重新执行 AGENTS.md 的完整验证流程。
 
 ## 上一轮清理（承接后可选阅读）
 
@@ -15,7 +24,7 @@ AA 修复交付后又做了一轮针对性清理，均已验证：`getText` / `g
 
 **未做**：全院约 40 处 `nested-ternary-js` 与 `no-console-except-error-js` / `hardcoded-url-js` 告警。前者遍布 `src/*.jsx` 与 `src/analysis.mjs`（评分代码，嵌套三元是承重逻辑），纯风格重写、零功能收益且回归风险高；后两者分别是服务启动横幅 / CLI 输出与「只监听 127.0.0.1:4317」的既定设计，均非缺陷。这些规则也不在仓库门禁内（`npm run lint` 是 ESLint）。
 
-## 本次交付内容
+## 前次 AA 摄取交付（历史背景）
 
 1. **AA 摄取改用页面 manifest 加密端点**（`docs/adr/0006`）：源站改版后全量 704 行不再随页面下发，原 Flight `models` 数组解析稳定失败（报「找不到含开放权重元数据的模型数据」，而 Vals / LiveBench 同时成功、AA 页面 HTTP 200 正常返回 1.9MB——是摄取契约失效，非网络波动）。新链路为「页面取 manifest → 拉 `/data/<hash>.txt` → AES-256-GCM 解密 → gunzip → JSON」，密钥写在同一个 Flight 分片里。字段映射与旧解析逐字段一致，**口径不变**（不涉及 ADR-0003），三站仍无 key 运行。
 2. **两道完整性闸门**，针对「不完整但格式合法」的静默退化：
@@ -42,14 +51,14 @@ npm run test:e2e && npm run test:portal && npm run test:evidence
 
 ## CI（`.github/workflows/ci.yml`）
 
-单 job 顺序执行：`npm ci` → lint / lint:css / format:check → test:coverage → build → 启动生产服务（`npm start` + 轮询 `/api/status` 就绪，上限 30 秒）→ 三套 E2E → 失败时上传 `test-artifacts/` 截图。另有 concurrency 取消上一轮、`contents: read` 最小权限、15 分钟超时。
+单 job 顺序执行：`npm ci` → lint / lint:css / format:check → test:coverage → build → `npm run refresh` → 启动生产服务（`npm start` + 轮询 `/api/status` 就绪，上限 30 秒）→ 三套 E2E → 失败时上传 `test-artifacts/` 截图。另有 concurrency 取消上一轮、`contents: read` 最小权限、15 分钟超时。
 
 约定与坑：
 
 - runner 固定 `ubuntu-26.04`（GitHub 托管镜像，`actions/runner-images` 已发布；`ubuntu-latest` 会随官方迁移漂移，故显式钉版本）。actionlint 内置标签库滞后于镜像发布，`.github/actionlint.yaml` 登记了该标签——删掉该配置会重现 "unknown label" 误报。
 - 三个第三方 action（checkout / setup-node / upload-artifact）钉完整提交 SHA 防供应链改写，版本号写在行尾或上方注释；升级 action 时 SHA 与注释必须一起改。checkout 关了 `persist-credentials`（CI 不需要 git 凭据）。
 - 本地没有 actionlint / yamllint，改完工作流至少跑 `npx prettier --check .github/`；YAML 行宽按 80 字符（CJK 按字符计，不按字节），`uses:` 行放长 SHA 时把版本注释移到上方独立行。
-- CI 上 AA 单站刷新约 14–21 秒（见下），仍在 30 秒就绪轮询与 15 分钟总预算内；若 CI 网络不通，源站会标 stale，但 E2E 读的是提交进仓库的快照，不受影响。
+- CI 上 AA 单站刷新约 14–21 秒（见下），仍在 15 分钟总预算内。数据文件退出版本控制后（ADR-0007），CI 在构建后显式执行 `npm run refresh` 落数据再跑 E2E：任一站失败步骤即红，不再有「读仓库快照」的隐式兜底。
 
 ## 实现要点与坑（改 `server/adapters.mjs` 的 AA 链路前必读）
 
@@ -84,5 +93,5 @@ npm run test:e2e && npm run test:portal && npm run test:evidence
 
 - `src/Chart.jsx` 前沿散点 / 斩杀区；`src/main.jsx` 探索页（应用外壳、分享状态、模型全景表）；`src/Portal.jsx` 门户六页（排行榜 / 对比 / chip）。
 - `src/analysis.mjs` 评分与帕累托（`dominatedBy` 在此计算，供斩杀区与 tooltip 共用）；`src/portal.mjs` 榜单行池与导出；`src/share.mjs` 分享链接编解码；`src/Evidence.jsx` 证据徽标。
-- `server/adapters.mjs` 三站摄取（AA 走 manifest 加密链路，见上）；`server/store.mjs` 抓取编排与落库闸门；`server/index.mjs` 单服务前后一体 + 定时抓取；`data/snapshot.json` 为聚合产物。
+- `server/adapters.mjs` 三站摄取（AA 走 manifest 加密链路，见上）；`server/store.mjs` 抓取编排与落库闸门；`server/index.mjs` 单服务前后一体 + 定时抓取；`data/snapshot.json` 为聚合产物（已退出版本控制，ADR-0007）。
 - 规格在 `openspec/specs/<能力>/spec.md`；ADR 在 `docs/adr/`。

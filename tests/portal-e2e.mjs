@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import { shareHash } from "../src/share.mjs";
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
 const base = process.env.FRONTIER_URL ?? "http://localhost:4317";
@@ -35,6 +36,11 @@ try {
     .getByRole("heading", { name: "综合能力领先", exact: true })
     .waitFor();
   await page.locator(".leader-row").first().waitFor();
+  await page.waitForFunction(() => {
+    const saved = JSON.parse(localStorage.getItem("frontier:preferences"));
+    return saved && !("preset" in saved) && !("scoringVersion" in saved);
+  });
+  await page.waitForFunction(() => !location.hash.includes("score="));
   assert.equal(await page.getByRole("tab").count(), 6);
   await overflow();
   await page.screenshot({
@@ -76,6 +82,13 @@ try {
     .getByText("从排行榜勾选模型，或在上方搜索添加", { exact: true })
     .waitFor();
   await tab("融合排行榜");
+  assert.equal(
+    await page
+      .locator(".ranking-main-table")
+      .getByRole("columnheader", { name: "数据提示", exact: true })
+      .count(),
+    0,
+  );
   await page
     .locator(".ranking-table .ant-table-tbody tr[data-row-key]")
     .first()
@@ -190,7 +203,13 @@ try {
   await page
     .getByRole("checkbox", { name: "LiveBench 能力维度", exact: true })
     .uncheck();
-  await page.getByText("覆盖口径差异", { exact: true }).waitFor();
+  assert.equal(
+    await page
+      .getByRole("group", { name: "覆盖口径差异", exact: true })
+      .count(),
+    0,
+    "融合排行榜不再展示覆盖口径差异面板",
+  );
   await page
     .getByRole("combobox", { name: "预算成本来源", exact: true })
     .click();
@@ -237,14 +256,20 @@ try {
   await page.reload();
   await page
     .locator(".scoring-context")
-    .getByText(/三榜等权/)
+    .getByText(/三榜各一票/)
     .waitFor();
-  await page.getByText("全部 3 榜 · 严格比较", { exact: true }).waitFor();
+  await page
+    .locator(".scoring-context")
+    .getByText(/至少 2 榜/)
+    .waitFor();
   // 同文档粘贴分享链接（仅 hash 变化、不重载）也必须恢复口径，而不是被状态同步覆盖。
   await page.evaluate(() => {
     location.hash = "#rankings?cs=vals&ms=1";
   });
-  await page.getByText("至少 1 榜 · 探索模式", { exact: true }).waitFor();
+  await page
+    .locator(".scoring-context")
+    .getByText(/至少 2 榜/)
+    .waitFor();
   await page
     .locator(".ranking-main-table")
     .getByRole("columnheader", { name: "Vals 每次测试成本", exact: true })
@@ -259,21 +284,101 @@ try {
       exact: true,
     })
     .waitFor();
-  // 共享设置只改变分析口径，对比选择跨页面保留。
-  await page.getByRole("combobox", { name: "权重预设", exact: true }).click();
-  await page
-    .locator(".ant-select-dropdown:visible .ant-select-item-option")
-    .filter({ hasText: "三榜等权" })
-    .click();
+  // 当前成本与质量设置跨页面保留，评分规则始终相同。
   await tab("模型对比");
   await page
     .locator(".scoring-context")
-    .getByText(/三榜等权/)
+    .getByText(/三榜各一票/)
     .waitFor();
   assert.equal(
     await page.locator(".compare-selector .ant-select-selection-item").count(),
     2,
   );
+  // 带过时参数的地址仍统一使用当前规则；正式积分与原始分差同时可查。
+  await page.evaluate(() => {
+    location.hash = "#compare?score=majority&sel=glm53,deepseekv41flash";
+  });
+  await page.locator(".majority-comparison").waitFor();
+  await page
+    .locator(".majority-comparison")
+    .getByText("2∶1（0 平票）· 左方获胜", { exact: true })
+    .waitFor();
+  await page.reload();
+  await page
+    .locator(".majority-comparison")
+    .getByText("2∶1（0 平票）· 左方获胜", { exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    location.hash = "#compare?score=majority2&sel=glm53,deepseekv41flash";
+  });
+  await page
+    .getByRole("cell", { name: "同积分辅助分（仅用于排序）", exact: true })
+    .waitFor();
+  await page.reload();
+  await page
+    .getByRole("cell", { name: "同积分辅助分（仅用于排序）", exact: true })
+    .waitFor();
+  await tab("融合排行榜");
+  assert.equal(
+    await page.getByRole("combobox", { name: "权重预设", exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await page
+      .getByRole("combobox", { name: "最低榜单覆盖", exact: true })
+      .count(),
+    0,
+  );
+  await page
+    .locator(".ranking-main-table")
+    .getByRole("columnheader", { name: "多数对决积分", exact: true })
+    .waitFor();
+  const majorityExport = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出当前榜单", exact: true }).click();
+  const majorityCsv = await readFile(
+    await (await majorityExport).path(),
+    "utf8",
+  );
+  assert.ok(majorityCsv.includes("两榜多数对决"));
+  assert.ok(majorityCsv.includes("同积分辅助排序"));
+  await tab("模型对比");
+  // 全默认分享也必须覆盖接收方不同的本机偏好。
+  const receiver = await browser.newPage();
+  try {
+    await receiver.addInitScript(() =>
+      localStorage.setItem(
+        "frontier:preferences",
+        JSON.stringify({
+          costSchemaVersion: 2,
+          costSource: "aa",
+          includeEstimated: true,
+          excludeHistorical: true,
+          excludeStale: true,
+        }),
+      ),
+    );
+    await receiver.goto(base + "/" + shareHash("rankings"));
+    await receiver
+      .locator(".ranking-main-table")
+      .getByRole("columnheader", {
+        name: "综合相对成本（基准 1 倍）",
+        exact: true,
+      })
+      .waitFor();
+    for (const name of [
+      "允许 AA 估算分数",
+      "排除历史配置",
+      "排除过期或失败缓存",
+    ]) {
+      assert.equal(
+        await receiver.getByRole("switch", { name, exact: true }).isChecked(),
+        false,
+        "默认分享不应继承接收方偏好：" + name,
+      );
+    }
+  } finally {
+    await receiver.close();
+  }
   await page.setViewportSize({ width: 375, height: 812 });
   await overflow();
   await page.screenshot({
@@ -327,11 +432,14 @@ try {
           "comparison persistence",
           "raw cost and suites",
           "livebench suite columns",
-          "scope difference panel",
+          "scope difference panel removed",
+          "single scoring rule without formula parameters",
+          "default share overrides recipient preferences",
+          "majority ballots, raw differences and export",
           "budget filter",
           "share link copy and restore",
           "share defaults override local prefs",
-          "shared weights",
+          "shared current settings",
           "375px pages",
           "landscape",
           "reduced motion",
