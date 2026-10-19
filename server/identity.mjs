@@ -48,7 +48,10 @@ export function aggregate(sources) {
         representatives[source] = selectRepresentative(rows);
       }
       const preferred =
-        representatives.vals ?? representatives.livebench ?? representatives.aa;
+        representatives.vals ??
+        representatives.livebench ??
+        representatives.aa ??
+        representatives.arena;
       const all = Object.values(g.records).flat();
       const openness = all
         .map((r) => r.openWeights)
@@ -67,6 +70,7 @@ export function aggregate(sources) {
         creator:
           representatives.aa?.creator ??
           representatives.livebench?.creator ??
+          representatives.arena?.creator ??
           "未披露",
         openWeights,
         openConflict: conflicts,

@@ -154,7 +154,7 @@ export function livebenchSuiteKeys(models) {
     .map(([key]) => key);
 }
 export function coverageSummary(models, { includeEstimated = false } = {}) {
-  const groups = [0, 0, 0, 0];
+  const groups = Array(SOURCE_IDS.length + 1).fill(0);
   const counts = Object.fromEntries(SOURCE_IDS.map((s) => [s, 0]));
   for (const m of models) {
     let count = 0;
@@ -197,6 +197,10 @@ export function nativeCsvExport(rows, meta = {}) {
         "历史条目",
         "获取时间",
         "源站版本",
+        "投票数",
+        "评分区间下限",
+        "评分区间上限",
+        "发布日期",
       ],
       ...rows.map((r) => [
         r.rank,
@@ -210,6 +214,10 @@ export function nativeCsvExport(rows, meta = {}) {
         r.deprecated ? "是" : "否",
         fetchedAt,
         meta.sourceDate ?? "",
+        r.voteCount,
+        r.scoreLower,
+        r.scoreUpper,
+        r.publishedAt,
       ]),
     ]
       .map((row) => row.map(cell).join(","))

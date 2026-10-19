@@ -7,7 +7,6 @@ import {
   csvExport,
   combinedCostProfile,
   combinedCost,
-  frontierStability,
   sourceAudit,
 } from "../src/analysis.mjs";
 import { familyKey, aggregate } from "../server/identity.mjs";
@@ -135,6 +134,27 @@ test("new families are discovered without a model whitelist; conflicts stay unco
   assert.equal(g[0].openWeights, null);
   assert.equal(g[0].openConflict, true);
 });
+test("an Arena-only model joins the library with its own evidence as fallback", () => {
+  const g = aggregate({
+    arena: {
+      ingestFormat: "arena-text-overall-v1",
+      rows: [
+        {
+          name: "Arena Only 1",
+          rawId: "Arena Only 1",
+          score: 1400,
+          openWeights: false,
+          creator: "Mystery Lab",
+        },
+      ],
+    },
+  });
+  assert.equal(g.length, 1);
+  assert.equal(g[0].representatives.arena.score, 1400);
+  // 无 AA / LiveBench / Vals 记录时，Arena 记录兜底模型名与厂商
+  assert.equal(g[0].name, "Arena Only 1");
+  assert.equal(g[0].creator, "Mystery Lab");
+});
 test("representative cost stays bound to the chosen variant and estimates are secondary", () => {
   const g = aggregate({
     aa: {
@@ -228,33 +248,76 @@ test("missing-source costs are not imputed or reweighted into combined cost", ()
   assert.equal(r.rows[1].plottable, false);
 });
 
-test("frontier stability uses identical complete cohort and reports a 4-scenario frequency", () => {
-  const a = [
+test("Arena never enters the combined cost baseline, per-model cost or composite ballots", () => {
+  const base = [
     model("a", {
-      aa: { score: 10, costTask: 1 },
-      vals: { score: 10, costTask: 1 },
-      livebench: { score: 10, costTask: 1 },
+      aa: { score: 9, costTask: 1 },
+      vals: { score: 9, costTask: 10 },
+      livebench: { score: 9, costTask: 100 },
     }),
     model("b", {
-      aa: { score: 20, costTask: 2 },
-      vals: { score: 20, costTask: 2 },
-      livebench: { score: 20, costTask: 2 },
+      aa: { score: 5, costTask: 2 },
+      vals: { score: 5, costTask: 20 },
+      livebench: { score: 5, costTask: 200 },
     }),
-    model("missing", { aa: { score: 100, costTask: 0.001 } }),
   ];
-  const r = frontierStability(a);
-  assert.equal(r.cohort, 2);
-  assert.equal(r.rows.length, 2);
-  assert.equal(r.scenarioCount, 4);
-  assert.ok(
-    r.rows.every(
-      (r) =>
-        r.globalIndex === 100 &&
-        r.openIndex === 100 &&
-        r.scenarios.length === 4,
-    ),
+  const withArena = structuredClone(base);
+  // 即使脏数据给 Arena 塞了成本，成本基准与几何平均也必须无视它
+  withArena[0].representatives.arena = {
+    score: 1400,
+    costTask: 0.0001,
+    voteCount: 4904,
+  };
+  withArena[1].representatives.arena = { score: 900, costTask: 999 };
+  const pb = combinedCostProfile(base);
+  const pa = combinedCostProfile(withArena);
+  assert.deepEqual(pa.medians, pb.medians);
+  assert.equal(pa.sources.includes("arena"), false);
+  assert.equal(pa.count, pb.count);
+  for (let i = 0; i < 2; i++)
+    assert.ok(
+      Math.abs(
+        combinedCost(base[i], pb).value - combinedCost(withArena[i], pa).value,
+      ) < 1e-9,
+    );
+  const rb = analyze(base),
+    ra = analyze(withArena);
+  assert.deepEqual(
+    ra.rows.map((r) => [r.composite, r.cost, r.coverage]),
+    rb.rows.map((r) => [r.composite, r.cost, r.coverage]),
   );
 });
+
+test("composite CSV carries Arena raw score, votes, interval and publish date", () => {
+  const rows = analyze([
+    model("a", {
+      aa: { score: 9, costTask: 1 },
+      vals: { score: 9, costTask: 1 },
+      livebench: { score: 9, costTask: 1 },
+      arena: {
+        score: 1532.34,
+        voteCount: 4904,
+        scoreLower: 1500,
+        scoreUpper: 1560,
+        publishedAt: "2026-10-15",
+      },
+    }),
+  ]).rows;
+  const csv = csvExport(rows);
+  for (const header of [
+    "Arena",
+    "Arena配置",
+    "Arena投票数",
+    "Arena评分区间下限",
+    "Arena评分区间上限",
+    "Arena发布日期",
+  ])
+    assert.ok(csv.includes(header), `缺少列 ${header}`);
+  assert.ok(csv.includes("1532.34"));
+  assert.ok(csv.includes("4904"));
+  assert.ok(csv.includes("2026-10-15"));
+});
+
 test("source audit restores native source population rather than the shared-source intersection", () => {
   const a = model("a", {
     vals: { name: "A", score: 50, costTask: 2 },

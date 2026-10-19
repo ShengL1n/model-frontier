@@ -1,11 +1,14 @@
 // 可分享、可复现的比较：把评分口径、显示筛选与对比选择编码进页面锚点。
 // 编码只覆盖「影响结论口径」的状态；打开同一链接即可复核同一结论，不通过链接传递任何数据本身。
-const SOURCES = ["aa", "vals", "livebench"];
-const COST_SOURCES = [...SOURCES, "composite"];
+import {
+  SCORE_SOURCES as SOURCES,
+  COST_SOURCES as TASK_COST_SOURCES,
+} from "../shared/sources.mjs";
+const COST_SOURCES = [...TASK_COST_SOURCES, "composite"];
 const FOCUS_VALUES = ["openFirst", "all", "openOnly"];
 const OPENNESS_VALUES = ["all", "open", "closed", "unknown"];
 const VIEWS = ["fusion", ...SOURCES];
-const BUDGET_SOURCES = ["none", ...SOURCES];
+const BUDGET_SOURCES = ["none", ...TASK_COST_SOURCES];
 const MAX_TEXT = 120;
 // 默认值不写入链接，保持分享地址尽量短；带参数的链接是完整口径状态，缺省字段一律取默认值（与 reload 恢复语义一致）。
 // 无参数的地址不视为分享链接，由应用沿用本地偏好。

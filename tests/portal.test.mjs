@@ -133,7 +133,7 @@ test("comparison selection rejects stale ids, duplicates and more than four choi
   );
   assert.deepEqual(sanitizeSelection({}, models), []);
 });
-test("coverage counts three-source evidence, excluding estimates unless requested", () => {
+test("coverage counts four-source evidence, excluding estimates unless requested", () => {
   const models = [
     model("a", {
       aa: { score: 1 },
@@ -144,13 +144,28 @@ test("coverage counts three-source evidence, excluding estimates unless requeste
     model("c", { vals: { score: 2 } }),
   ];
   assert.deepEqual(coverageSummary(models), {
-    counts: { aa: 1, vals: 2, livebench: 1 },
-    groups: [1, 1, 0, 1],
+    counts: { aa: 1, vals: 2, livebench: 1, arena: 0 },
+    groups: [1, 1, 0, 1, 0],
   });
   assert.deepEqual(
     coverageSummary(models, { includeEstimated: true }).groups,
-    [0, 2, 0, 1],
+    [0, 2, 0, 1, 0],
   );
+});
+test("coverage counts Arena scores into the distribution and never lets them raise task-cost coverage", () => {
+  const models = [
+    model("a", {
+      aa: { score: 1 },
+      vals: { score: 2 },
+      livebench: { score: 3 },
+      arena: { score: 1400 },
+    }),
+    model("b", { arena: { score: 900 } }),
+  ];
+  const summary = coverageSummary(models);
+  assert.equal(summary.counts.arena, 2);
+  // a 有四榜有效分进最高档；b 只有 Arena 一榜，Arena 不提供成本也不能抬高档位统计。
+  assert.deepEqual(summary.groups, [0, 1, 0, 0, 1]);
 });
 test("native CSV exports raw score and cost with spreadsheet injection protection", () => {
   const csv = nativeCsvExport([
@@ -286,6 +301,28 @@ test("native CSV carries fetch time and release label for reproducibility", () =
   assert.ok(csv.includes("2026-10-16T02:05:52.769Z"));
   assert.ok(csv.includes("源站版本"));
   assert.ok(csv.includes("10/13/2026"));
+});
+test("native CSV exports Arena votes, interval and publish date for single-board review", () => {
+  const csv = nativeCsvExport([
+    {
+      rank: 1,
+      configuration: "Gemini 4 Argon (High)",
+      creator: "Google",
+      score: 1532.34,
+      costTask: null,
+      voteCount: 4904,
+      scoreLower: 1500,
+      scoreUpper: 1560,
+      publishedAt: "2026-10-15",
+      estimated: false,
+      deprecated: false,
+    },
+  ]);
+  assert.ok(csv.includes("投票数"));
+  assert.ok(csv.includes("评分区间下限"));
+  assert.ok(csv.includes("发布日期"));
+  assert.ok(csv.includes("4904"));
+  assert.ok(csv.includes("2026-10-15"));
 });
 test("native CSV leaves fetch time empty instead of throwing on a corrupted timestamp", () => {
   const csv = nativeCsvExport(

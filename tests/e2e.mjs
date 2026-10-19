@@ -97,11 +97,19 @@ try {
   assert.ok(data.models.length > 100);
   assert.deepEqual(Object.keys(data.sources).sort(), [
     "aa",
+    "arena",
     "livebench",
     "vals",
   ]);
+  // Arena 已回归第四评分来源：必须有真实数据进入模型族，且披露票数证据
+  assert.ok(data.sources.arena.count > 100, "Arena overall 配置应超过 100 条");
   assert.ok(
-    data.models.every((m) => !m.records.arena && !m.representatives.arena),
+    data.models.some(
+      (m) =>
+        Number.isFinite(m.representatives?.arena?.score) &&
+        Number.isFinite(m.representatives.arena.voteCount),
+    ),
+    "至少一个模型族应带有 Arena 评分与票数",
   );
   assert.ok(Object.values(data.sources).every((s) => s.count > 5 && !s.stale));
   const checkOverflow = async () => {
@@ -178,6 +186,20 @@ try {
       "按模型族归并。这里保留各榜单具体配置；跨站分数不代表同一个推理档位。",
     )
     .waitFor();
+  // 标题带「源数据」链接，可访问名以 Arena 开头
+  assert.equal(
+    await page
+      .getByRole("dialog")
+      .getByRole("heading", { name: /^Arena/ })
+      .count(),
+    1,
+    "详情抽屉应有 Arena 单榜区",
+  );
+  await page
+    .getByRole("dialog")
+    .getByText("盲测投票数", { exact: false })
+    .first()
+    .waitFor();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.getByLabel("搜索模型", { exact: true }).fill("");
@@ -197,17 +219,18 @@ try {
   assert.ok(csv.includes("MiMo"));
   assert.ok(csv.includes("开放权重前沿"));
   await choose("成本来源", "Vals 每次测试成本");
-  await page.getByRole("tab", { name: "成本敏感性", exact: true }).click();
-  await page
-    .getByRole("heading", { name: "结论对成本口径敏感吗？", exact: true })
-    .waitFor();
-  await page
-    .getByRole("heading", { name: "前沿稳定性指数", exact: true })
-    .waitFor();
-  assert.equal(await page.locator(".preset-cards>div").count(), 0);
+  assert.equal(
+    await page.getByRole("tab", { name: "成本敏感性", exact: true }).count(),
+    0,
+  );
   await page.getByRole("tab", { name: "数据来源与刷新", exact: true }).click();
-  assert.equal(await page.locator(".source-card").count(), 3);
+  assert.equal(await page.locator(".source-card").count(), 4);
   await page.getByText("703 条源站模型配置", { exact: false }).count();
+  await page
+    .locator(".source-card")
+    .filter({ hasText: "Arena" })
+    .getByText("Text Overall · 人类盲测偏好", { exact: true })
+    .waitFor();
   const response = await page.request.put(base + "/api/settings", {
     data: { refreshHours: 7 },
   });
@@ -273,8 +296,8 @@ try {
           "fixed two-source scoring",
           "cost",
           "source coverage",
+          "arena fourth source",
           "CSV",
-          "sensitivity",
           "source status",
           "settings validation",
           "local origin guard",

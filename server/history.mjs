@@ -2,7 +2,7 @@ import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { familyKey } from "./identity.mjs";
-const SOURCES = ["aa", "vals", "livebench"];
+import { SCORE_SOURCES as SOURCES } from "../shared/sources.mjs";
 export const HISTORY_LIMIT = 60;
 const FIELDS = [
   "name",
@@ -18,6 +18,10 @@ const FIELDS = [
   "estimated",
   "deprecated",
   "openWeights",
+  "voteCount",
+  "scoreLower",
+  "scoreUpper",
+  "publishedAt",
 ];
 const rowKey = (r) =>
   JSON.stringify([r.rawId ?? null, r.name, r.configuration]);

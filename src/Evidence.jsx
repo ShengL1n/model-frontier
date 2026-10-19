@@ -187,3 +187,18 @@ export function QualityNote() {
     </p>
   );
 }
+
+export function ArenaEvidence({ record }) {
+  if (!record) return null;
+  return (
+    <div className="arena-evidence text-[10px] leading-[1.8] text-[#627987]">
+      <div>盲测投票数：{record.voteCount ?? "未披露"}</div>
+      <div>
+        Arena 源站评分区间：{record.scoreLower?.toFixed(2) ?? "未披露"} –{" "}
+        {record.scoreUpper?.toFixed(2) ?? "未披露"}
+      </div>
+      <div>榜单发布日期：{record.publishedAt ?? "未披露"}</div>
+      <div>人类偏好证据；该区间不是融合置信度。</div>
+    </div>
+  );
+}

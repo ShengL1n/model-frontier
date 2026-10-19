@@ -120,3 +120,14 @@ test("a fully default share still marks a complete shared state", () => {
   assert.equal(shareHash("rankings"), "#rankings?");
   assert.deepEqual(decodeShareState(shareHash("rankings")).state, {});
 });
+
+test("Arena single-board views are shareable while Arena cost and budget are rejected", () => {
+  assert.equal(encodeShareState({ view: "arena" }), "v=arena");
+  assert.deepEqual(
+    decodeShareState(shareHash("rankings", { view: "arena" })).state,
+    { view: "arena" },
+  );
+  // 成本口径与预算来源仍只接受三个任务成本来源；Arena 无成本，不得混入
+  assert.deepEqual(decodeShareState("#rankings?cs=arena").state, {});
+  assert.deepEqual(decodeShareState("#rankings?bs=arena&bl=2").state, {});
+});

@@ -21,6 +21,10 @@ const FIELDS = {
   estimated: "估算标记",
   deprecated: "历史标记",
   openWeights: "开放状态",
+  voteCount: "盲测投票数",
+  scoreLower: "评分区间下限",
+  scoreUpper: "评分区间上限",
+  publishedAt: "榜单发布日期",
 };
 const raw = (v) => (v == null ? "未披露" : String(v));
 function changeValue(item, key, isMoney = false) {

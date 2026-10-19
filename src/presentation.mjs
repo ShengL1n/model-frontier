@@ -2,6 +2,7 @@ export const NAMES = {
   aa: "Artificial Analysis",
   vals: "Vals",
   livebench: "LiveBench",
+  arena: "Arena",
 };
 export const COSTS = {
   composite: "综合相对成本（基准 1 倍）",

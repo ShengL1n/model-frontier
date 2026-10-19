@@ -21,11 +21,14 @@ test("legacy cache drops retired sources and preserves hourly refresh", async ()
   );
   await store.loadState();
   const data = store.view();
+  // 接口总是披露全部来源；旧格式 Arena 不算已获取，count 为 0。
   assert.deepEqual(Object.keys(data.sources).sort(), [
     "aa",
+    "arena",
     "livebench",
     "vals",
   ]);
+  assert.equal(data.sources.arena.count, 0);
   assert.equal(data.settings.refreshHours, 1);
   assert.equal(data.models.length, 1);
   assert.equal(data.models[0].name, "Current");
@@ -33,6 +36,62 @@ test("legacy cache drops retired sources and preserves hourly refresh", async ()
     await readFile(join(directory, "snapshot.json"), "utf8"),
   );
   assert.equal(Object.hasOwn(saved.sources, "arena"), false);
+});
+test("new-format Arena cache is kept as an acquired source and mixed into models", async () => {
+  await writeFile(
+    join(directory, "snapshot.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      sources: {
+        arena: {
+          ingestFormat: "arena-text-overall-v1",
+          sourceDate: "2026-10-15",
+          fetchedAt: "2026-10-16T02:05:52.769Z",
+          rows: [
+            {
+              name: "Arena Model",
+              rawId: "Arena Model",
+              score: 1400,
+              voteCount: 4904,
+              scoreLower: 1500,
+              scoreUpper: 1550,
+              publishedAt: "2026-10-15",
+            },
+          ],
+        },
+        aa: { rows: [{ name: "Current", score: 10, openWeights: true }] },
+      },
+      settings: { refreshHours: 1 },
+      lastRefresh: null,
+    }),
+  );
+  await store.loadState();
+  const data = store.view();
+  assert.equal(data.sources.arena.count, 1);
+  assert.equal(data.sources.arena.sourceDate, "2026-10-15");
+  const arenaModel = data.models.find((m) => m.name === "Arena Model");
+  assert.ok(arenaModel, "Arena-only 模型应进入模型库");
+  assert.equal(arenaModel.representatives.arena.score, 1400);
+  const saved = JSON.parse(
+    await readFile(join(directory, "snapshot.json"), "utf8"),
+  );
+  assert.equal(saved.sources.arena.ingestFormat, "arena-text-overall-v1");
+});
+test("a failed Arena refresh keeps the last good cache and marks it stale", async () => {
+  await store.loadState();
+  const good = store.view().sources.arena.fetchedAt;
+  await store.refreshAll({
+    arena: async () => {
+      throw new Error("arena outage");
+    },
+  });
+  const data = store.view();
+  assert.equal(data.sources.arena.count, 1);
+  assert.equal(data.sources.arena.sourceDate, "2026-10-15");
+  assert.equal(data.sources.arena.stale, true);
+  assert.equal(data.sources.arena.error, "arena outage");
+  assert.equal(data.sources.arena.fetchedAt, good);
+  assert.ok(data.sources.arena.attemptedAt);
 });
 test("concurrent refreshes coalesce; failed sources preserve last good snapshot and timestamps", async () => {
   await store.loadState();

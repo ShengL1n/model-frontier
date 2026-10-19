@@ -39,6 +39,7 @@ import {
 import CompareChart from "./CompareChart.jsx";
 import { majorityMatch } from "./analysis.mjs";
 import {
+  ArenaEvidence,
   ConfigurationDetails,
   EvidenceBadges,
   SourceQuality,
@@ -47,11 +48,12 @@ import {
 } from "./Evidence.jsx";
 import { sourceHealth } from "./evidence.mjs";
 const number = (v) => (Number.isFinite(v) ? v.toFixed(1) : "未披露");
-// 三来源徽标配色（原 .source-aa/.source-vals/.source-livebench，键与 SOURCE_IDS 对应）
+// 四来源徽标配色（原 .source-aa/.source-vals/.source-livebench，键与 SOURCE_IDS 对应）
 const SOURCE_TONE = {
   aa: "bg-[#e7eef9] text-[#416795]",
   vals: "bg-[#eeeaf7] text-[#7e60a7]",
   livebench: "bg-[#e5f3ef] text-[#137964]",
+  arena: "bg-[#f2eafa] text-[#76559a]",
 };
 const stateTag = (r) => (
   <Tag color={r.openWeights === true ? "green" : "default"}>
@@ -216,13 +218,13 @@ export function Overview({
       <section className="portal-hero">
         <div>
           <div className="text-[9px] font-[650] tracking-[0.16em] text-[#668c86] max-760:text-[8px]">
-            THREE SOURCES. ONE WORKSPACE.
+            FOUR SOURCES. ONE WORKSPACE.
           </div>
           <h2 className="mt-[14px] mb-[10px] text-[28px] font-semibold leading-[1.45] tracking-[-0.04em] text-[#203e3b] max-1180:text-[25px] max-760:text-[24px]">
             从榜单，到你的模型选择
           </h2>
           <p className="m-0 max-w-[600px] text-[13px] leading-[1.95] text-[#5f7c77] max-760:text-[12px]">
-            先看能力排名，再核对任务表现、价格与配置。三个来源的证据并排呈现，每一个综合结论都能回到原始数据。
+            先看能力排名，再核对任务表现、价格与配置。四个来源的证据并排呈现，每一个综合结论都能回到原始数据。
           </p>
           <div className="hero-actions">
             <Button
@@ -248,7 +250,7 @@ export function Overview({
               className="flex items-center gap-[12px] rounded-[9px] border border-[#e1ebe7] bg-[#ffffffc9] px-[16px] py-[13px] max-760:p-[12px]"
             >
               <span className={"source-symbol " + (SOURCE_TONE[s] ?? "")}>
-                {["AA", "V", "LB"][i]}
+                {["AA", "V", "LB", "AR"][i]}
               </span>
               <div className="flex-1">
                 <b className="block text-[12px] font-semibold">{NAMES[s]}</b>
@@ -296,7 +298,7 @@ export function Overview({
             <Tag>覆盖不加分</Tag>
           </div>
           <div className="coverage-distribution">
-            {[3, 2, 1, 0].map((n) => (
+            {[4, 3, 2, 1, 0].map((n) => (
               <div key={n}>
                 <span className="text-[11px] text-[#627c87]">
                   {n} 榜有效分数
@@ -316,14 +318,14 @@ export function Overview({
                   }
                   showInfo={false}
                   strokeColor={
-                    n === 3 ? "#0c806e" : n === 2 ? "#557daa" : "#a5b5c4"
+                    n === 4 ? "#0c806e" : n === 2 ? "#557daa" : "#a5b5c4"
                   }
                 />
               </div>
             ))}
           </div>
           <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
-            按当前质量排除与估算开关统计三站有效分数，与权重无关。仅一榜或无有效分数的模型仍可在模型库中检索。
+            按当前质量排除与估算开关统计四站有效分数，与权重无关。仅一榜或无有效分数的模型仍可在模型库中检索。
           </p>
         </section>
         <section className="min-w-0 rounded-[13px] border border-line bg-surface p-[24px] shadow-card max-1180:p-[20px] max-760:p-[20px]">
@@ -609,7 +611,12 @@ export function Rankings({
             dataIndex: "score",
             width: 120,
             sorter: (a, b) => (a.score ?? -Infinity) - (b.score ?? -Infinity),
-            render: number,
+            render: (value, row) => (
+              <div>
+                {number(value)}
+                {view === "arena" && <ArenaEvidence record={row} />}
+              </div>
+            ),
           },
           {
             title: "任务成本 USD",
@@ -790,7 +797,9 @@ export function Rankings({
           {view !== "fusion" && (
             <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
               {NAMES[view]}{" "}
-              的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。
+              {view === "arena"
+                ? "文本总榜原始偏好评分；票数、区间与发布日期直接来自源站，不是融合置信度。该来源不提供任务成本。"
+                : "的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。"}
             </p>
           )}
           <Table
@@ -929,6 +938,20 @@ export function Comparison({
         </span>
       )),
     ]),
+    metric(
+      "arena-votes",
+      "Arena · 投票数",
+      (r) => r.representatives.arena?.voteCount ?? "未披露",
+    ),
+    metric("arena-interval", "Arena · 源站评分区间", (r) => {
+      const a = r.representatives.arena;
+      return a ? `${number(a.scoreLower)} – ${number(a.scoreUpper)}` : "未披露";
+    }),
+    metric(
+      "arena-date",
+      "Arena · 榜单发布日期",
+      (r) => r.representatives.arena?.publishedAt ?? "未披露",
+    ),
     metric("input", "AA · 输入 USD/百万 token", (r) =>
       money(r.representatives.aa?.priceInput),
     ),

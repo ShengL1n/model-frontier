@@ -5,9 +5,11 @@ import { gzipSync } from "node:zlib";
 import {
   SOURCE_INFO,
   FETCHERS,
+  ARENA_FORMAT,
   aaManifest,
   decryptAAGzip,
   parseAA,
+  parseArena,
   parseVals,
   parseLivebench,
 } from "../server/adapters.mjs";
@@ -350,5 +352,130 @@ test("LiveBench retains a source release label distinct from the file key", asyn
     assert.equal(result.sourceDate, "2026-06-26");
   } finally {
     restore();
+  }
+});
+
+// Arena 单文件 Parquet 的记录形状（2026-10-15 实测）：
+// model_name / organization / license / rating / rating_lower / rating_upper /
+// vote_count / category / leaderboard_publish_date。
+const arenaRow = (over = {}) => ({
+  model_name: "Gemini 4 Argon (High)",
+  organization: "google",
+  license: "proprietary",
+  rating: 1532.3375436695164,
+  rating_lower: 1500,
+  rating_upper: 1560,
+  vote_count: 4904,
+  category: "overall",
+  leaderboard_publish_date: "2026-10-15",
+  ...over,
+});
+test("Arena ingestion keeps the overall split with raw rating, votes, interval and date", () => {
+  const r = parseArena([
+    arenaRow(),
+    arenaRow({
+      model_name: "Llama 4 Maverick",
+      organization: "meta",
+      license: "Llama 4 Community License",
+      rating: 0,
+      rating_lower: -5,
+      rating_upper: 5,
+      vote_count: 0,
+    }),
+    arenaRow({ model_name: "Coder 1", category: "webdev" }),
+  ]);
+  assert.equal(r.rows.length, 2);
+  assert.equal(r.ingestFormat, ARENA_FORMAT);
+  assert.equal(r.sourceDate, "2026-10-15");
+  const g = r.rows[0];
+  assert.equal(g.rawId, "Gemini 4 Argon (High)");
+  assert.equal(g.name, "Gemini 4 Argon (High)");
+  assert.equal(g.configuration, "Gemini 4 Argon (High)");
+  assert.equal(g.creator, "Google");
+  assert.equal(g.score, 1532.3375436695164);
+  assert.equal(g.voteCount, 4904);
+  assert.equal(g.scoreLower, 1500);
+  assert.equal(g.scoreUpper, 1560);
+  assert.equal(g.publishedAt, "2026-10-15");
+  assert.equal(g.openWeights, false);
+  assert.equal(g.costTask, null);
+  assert.equal(g.url, SOURCE_INFO.arena.url);
+  // 零分与零票按有限数接纳；区间允许跨零；已知开源许可证识别为开放权重
+  const l = r.rows[1];
+  assert.equal(l.score, 0);
+  assert.equal(l.voteCount, 0);
+  assert.equal(l.scoreLower, -5);
+  assert.equal(l.openWeights, true);
+  assert.equal(l.creator, "Meta");
+});
+test("Arena accepts negative ratings and unknown licenses without inventing openness", () => {
+  const r = parseArena([
+    arenaRow({
+      model_name: "Old Model",
+      organization: "mystery-lab",
+      license: null,
+      rating: -3.5,
+      rating_lower: -10,
+      rating_upper: 3,
+      vote_count: 120,
+    }),
+    // 真实快照存在 50 条 organization 为空串的记录，不能让空串穿透为空 creator
+    arenaRow({ model_name: "Blank Org", organization: "" }),
+  ]);
+  assert.equal(r.rows[0].score, -3.5);
+  assert.equal(r.rows[0].creator, "mystery-lab");
+  assert.equal(r.rows[1].creator, "未披露");
+  assert.equal(r.rows[0].openWeights, null);
+});
+test("Arena rejects missing overall split, duplicates and mixed publish dates", () => {
+  assert.throws(() => parseArena("nope"), /模型列表不是数组/);
+  assert.throws(
+    () => parseArena([arenaRow({ category: "webdev" })]),
+    /缺少文本 overall 总榜/,
+  );
+  assert.throws(() => parseArena([arenaRow(), arenaRow()]), /重复配置/);
+  assert.throws(
+    () =>
+      parseArena([
+        arenaRow(),
+        arenaRow({
+          model_name: "Other",
+          leaderboard_publish_date: "2026-10-08",
+        }),
+      ]),
+    /发布日期不一致/,
+  );
+});
+test("Arena rejects invalid names, ratings, intervals, votes and dates instead of clipping them", () => {
+  const bad = (over) => () => parseArena([arenaRow(over)]);
+  const invalid = /无效的模型、评分、票数、区间或发布日期/;
+  assert.throws(bad({ model_name: "  " }), invalid);
+  assert.throws(bad({ model_name: null }), invalid);
+  assert.throws(bad({ rating: Number.NaN }), invalid);
+  assert.throws(bad({ rating: undefined }), invalid);
+  assert.throws(bad({ rating_lower: 1600 }), invalid);
+  assert.throws(bad({ rating_upper: 1500 }), invalid);
+  assert.throws(bad({ rating_lower: "1500" }), invalid);
+  assert.throws(bad({ vote_count: -1 }), invalid);
+  assert.throws(bad({ vote_count: Number.NaN }), invalid);
+  assert.throws(bad({ leaderboard_publish_date: "2026/10/15" }), invalid);
+  assert.throws(bad({ leaderboard_publish_date: "2026-02-30" }), invalid);
+  assert.throws(bad({ leaderboard_publish_date: "Oct 15, 2026" }), invalid);
+});
+test("Arena download failures and corrupted files fail clearly instead of inventing rows", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response("", { status: 404 });
+  try {
+    await assert.rejects(() => FETCHERS.arena(), /HTTP 404/);
+  } finally {
+    globalThis.fetch = original;
+  }
+  // 非 Parquet 字节（HTML 错误页伪装 200）必须在解码层失败，不能产出部分数据
+  globalThis.fetch = async () =>
+    new Response("<!doctype html><title>Unexpected</title>", { status: 200 });
+  try {
+    await assert.rejects(() => FETCHERS.arena());
+  } finally {
+    globalThis.fetch = original;
   }
 });

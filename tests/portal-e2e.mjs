@@ -41,7 +41,15 @@ try {
     return saved && !("preset" in saved) && !("scoringVersion" in saved);
   });
   await page.waitForFunction(() => !location.hash.includes("score="));
-  assert.equal(await page.getByRole("tab").count(), 6);
+  assert.equal(await page.getByRole("tab").count(), 5);
+  await page.goto(base + "/#stability?");
+  await page
+    .getByRole("heading", { name: "综合能力领先", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByRole("tab", { name: "成本敏感性", exact: true }).count(),
+    0,
+  );
   await overflow();
   await page.screenshot({
     path: "test-artifacts/overview.png",
@@ -62,6 +70,12 @@ try {
     .waitFor();
   await page
     .getByRole("cell", { name: "LiveBench · 排名分", exact: true })
+    .waitFor();
+  await page
+    .getByRole("cell", { name: "Arena · 排名分", exact: true })
+    .waitFor();
+  await page
+    .getByRole("cell", { name: "Arena · 投票数", exact: true })
     .waitFor();
   assert.equal(
     await page.locator(".compare-selector .ant-select-selection-item").count(),
@@ -157,6 +171,26 @@ try {
       { exact: true },
     )
     .waitFor();
+  await source("Arena");
+  await page
+    .getByText(
+      "Arena 文本总榜原始偏好评分；票数、区间与发布日期直接来自源站，不是融合置信度。该来源不提供任务成本。",
+      { exact: true },
+    )
+    .waitFor();
+  await page
+    .locator(".ranking-table")
+    .getByText("盲测投票数", { exact: false })
+    .first()
+    .waitFor();
+  const arenaDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出当前榜单", exact: true }).click();
+  const arenaCsvFile = await arenaDownload;
+  assert.equal(arenaCsvFile.suggestedFilename(), "arena-ranking.csv");
+  const arenaCsv = await readFile(await arenaCsvFile.path(), "utf8");
+  assert.ok(arenaCsv.includes("原始总分"));
+  assert.ok(arenaCsv.includes("投票数"), "Arena 导出缺少投票数列");
+  assert.ok(arenaCsv.includes("发布日期"), "Arena 导出缺少发布日期列");
   await source("融合总榜");
   await page.screenshot({
     path: "test-artifacts/rankings.png",
@@ -256,7 +290,7 @@ try {
   await page.reload();
   await page
     .locator(".scoring-context")
-    .getByText(/三榜各一票/)
+    .getByText(/四榜各一票/)
     .waitFor();
   await page
     .locator(".scoring-context")
@@ -288,7 +322,7 @@ try {
   await tab("模型对比");
   await page
     .locator(".scoring-context")
-    .getByText(/三榜各一票/)
+    .getByText(/四榜各一票/)
     .waitFor();
   assert.equal(
     await page.locator(".compare-selector .ant-select-selection-item").count(),
@@ -299,14 +333,19 @@ try {
     location.hash = "#compare?score=majority&sel=glm53,deepseekv41flash";
   });
   await page.locator(".majority-comparison").waitFor();
+  // 第四票接入后，具体票数随真实数据变化，只锁定「有裁决」与 Arena 计票列存在
   await page
     .locator(".majority-comparison")
-    .getByText("2∶1（0 平票）· 左方获胜", { exact: true })
+    .getByRole("columnheader", { name: "Arena", exact: true })
+    .waitFor();
+  await page
+    .locator(".majority-comparison")
+    .getByText(/∶\d+（\d+ 平票）· (左方获胜|右方获胜|对决平局)/)
     .waitFor();
   await page.reload();
   await page
     .locator(".majority-comparison")
-    .getByText("2∶1（0 平票）· 左方获胜", { exact: true })
+    .getByText(/∶\d+（\d+ 平票）· (左方获胜|右方获胜|对决平局)/)
     .waitFor();
   await page.evaluate(() => {
     location.hash = "#compare?score=majority2&sel=glm53,deepseekv41flash";
@@ -420,10 +459,11 @@ try {
     JSON.stringify(
       {
         passed: true,
-        pages: 6,
+        pages: 5,
         checks: [
           "overview",
-          "three-source rankings",
+          "four-source rankings",
+          "arena native board and evidence",
           "native full configurations",
           "native export",
           "fusion export metadata",

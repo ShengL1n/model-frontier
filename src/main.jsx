@@ -1,3 +1,4 @@
+import { COST_SOURCES } from "../shared/sources.mjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -32,7 +33,6 @@ import {
   DotChartOutlined,
   RiseOutlined,
   LineChartOutlined,
-  ControlOutlined,
   DatabaseOutlined,
   TrophyOutlined,
   SwapOutlined,
@@ -49,16 +49,12 @@ import {
   money,
   formatTime,
 } from "./presentation.mjs";
-import {
-  analyze,
-  csvExport,
-  sourceAudit,
-  frontierStability,
-} from "./analysis.mjs";
+import { analyze, csvExport, sourceAudit } from "./analysis.mjs";
 import { Overview, Rankings, Comparison, CreatorChips } from "./Portal.jsx";
 import { applyBudget, sanitizeSelection, vendorChipCounts } from "./portal.mjs";
 import { applyEvidencePolicy, sourceHealth } from "./evidence.mjs";
 import {
+  ArenaEvidence,
   ConfigurationDetails,
   EvidenceBadges,
   SourceQuality,
@@ -67,14 +63,7 @@ import {
 import HistoryDrawer from "./HistoryDrawer.jsx";
 import { decodeShareState, shareHash } from "./share.mjs";
 import "./style.css";
-const PAGES = [
-  "overview",
-  "rankings",
-  "compare",
-  "explore",
-  "stability",
-  "sources",
-];
+const PAGES = ["overview", "rankings", "compare", "explore", "sources"];
 const pageFromHash = () =>
   PAGES.includes(location.hash.slice(1).split("?")[0])
     ? location.hash.slice(1).split("?")[0]
@@ -312,7 +301,7 @@ function App() {
   );
   const activeCostSources = useMemo(
     () =>
-      Object.keys(NAMES).filter(
+      COST_SOURCES.filter(
         (s) => !excludeStale || !sourceHealth(data?.sources?.[s]).excluded,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 同上，qualityStamp 已覆盖 excluded 变化
@@ -359,7 +348,7 @@ function App() {
   // 导出附带数据时间与评分口径，保证日后可复核同一结论。
   const scopeLabel = useMemo(() => {
     const parts = [
-      "两榜多数对决（三榜各一票，同积分辅助排序）",
+      "两榜多数对决（四榜各一票，同积分辅助排序）",
       `至少 ${analysis.required} 榜`,
       estimated ? "允许 AA 估算" : "排除 AA 估算",
     ];
@@ -443,13 +432,6 @@ function App() {
       setTimeout(() => setCopied(false), 2000);
     } else setError("复制失败：请直接复制浏览器地址栏的链接");
   };
-  const stability = useMemo(
-    () =>
-      frontierStability(evaluationModels, {
-        includeEstimated: estimated,
-      }),
-    [evaluationModels, estimated],
-  );
   const current = analysis.rows.find((r) => r.id === selected);
   const stale = Object.values(data?.sources ?? {}).filter((s) => s.stale);
   const refresh = async () => {
@@ -636,7 +618,7 @@ function App() {
         <SettingOutlined aria-hidden="true" />
       </div>
       <p className="control-help text-[11px] leading-[1.9] max-760:col-span-full">
-        多数对决：AA、Vals、LiveBench
+        多数对决：AA、Vals、LiveBench、Arena
         各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。主积分相同才用辅助分排序；实际对手集合可能不同，原始分差不混入积分。
       </p>
       <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-760:my-[6px] max-760:col-span-full" />
@@ -662,7 +644,7 @@ function App() {
       <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
         任务预算筛选
       </label>
-      <div className="budget-line flex gap-[8px] items-center max-760:flex-col max-760:items-stretch">
+      <div className="budget-line flex flex-col gap-[8px] items-stretch">
         <Select
           virtual={false}
           aria-label="预算成本来源"
@@ -673,9 +655,9 @@ function App() {
           }}
           options={[
             { value: "none", label: "不限制" },
-            ...Object.entries(NAMES).map(([value, label]) => ({
+            ...COST_SOURCES.map((value) => ({
               value,
-              label,
+              label: NAMES[value],
             })),
           ]}
         />
@@ -793,9 +775,9 @@ function App() {
       <main className="mx-auto max-w-[1640px] pt-[28px] px-[38px] pb-[20px] max-1180:pt-[26px] max-1180:px-[25px] max-760:pt-[24px] max-760:px-[16px]">
         <div className="page-heading">
           <div>
-            <div className="eyebrow">AA / VALS / LIVEBENCH</div>
+            <div className="eyebrow">AA / VALS / LIVEBENCH / ARENA</div>
             <h1 className="text-[29px] leading-[1.4] font-[650] tracking-[-0.035em] my-[10px] max-1180:text-[26px] max-760:text-[23px] max-760:leading-[1.5]">
-              三榜融合，全面认识一个模型
+              四榜融合，全面认识一个模型
             </h1>
             <p className="text-[12px] leading-[1.8] text-[#657e8d] m-0 max-760:text-[11px] max-760:leading-[1.9]">
               综合排行、单榜证据、模型对比与成本前沿。持续发现新模型，重点关注开放权重。
@@ -861,7 +843,7 @@ function App() {
               </em>
             </strong>
             <span className="text-[10px] text-[#8b9aa5] max-1180:text-[9px] max-760:text-[8px] max-760:leading-[1.6] max-760:block">
-              来自三站完整数据的并集
+              来自四站完整数据的并集
             </span>
           </div>
           <div className="relative border border-line rounded-[12px] bg-surface shadow-card pt-[20px] px-[21px] pb-[17px] max-1180:py-[18px] max-1180:px-[16px] max-760:pt-[16px] max-760:px-[15px] max-760:pb-[15px] max-760:min-w-0">
@@ -906,7 +888,7 @@ function App() {
               aria-hidden="true"
             />
             <small className="block text-[11px] text-[#718592] max-760:text-[10px]">
-              三榜共同覆盖
+              四榜共同覆盖
             </small>
             <strong className="block text-[31px] font-semibold tracking-[-0.045em] leading-[1.65] tabular-nums text-green max-760:text-[28px] max-760:leading-[1.7]">
               {evaluationModels.filter((m) =>
@@ -921,7 +903,7 @@ function App() {
               </em>
             </strong>
             <span className="text-[10px] text-[#8b9aa5] max-1180:text-[9px] max-760:text-[8px] max-760:leading-[1.6] max-760:block">
-              三个来源均披露有效总分
+              四个来源均披露有效总分
             </span>
           </div>
         </section>
@@ -951,11 +933,6 @@ function App() {
               icon: <DotChartOutlined aria-hidden="true" />,
             },
             {
-              key: "stability",
-              label: "成本敏感性",
-              icon: <ControlOutlined aria-hidden="true" />,
-            },
-            {
               key: "sources",
               label: "数据来源与刷新",
               icon: <DatabaseOutlined aria-hidden="true" />,
@@ -964,7 +941,7 @@ function App() {
         />
         <div className="scoring-context">
           <span className="flex items-center gap-[8px] flex-wrap">
-            <SettingOutlined aria-hidden="true" /> 多数对决积分 · 三榜各一票 ·
+            <SettingOutlined aria-hidden="true" /> 多数对决积分 · 四榜各一票 ·
             至少 {analysis.required} 榜 · {estimated ? "允许估算" : "排除估算"}
             {excludeHistorical ? " · 排除历史" : ""}
             {excludeStale ? " · 排除过期缓存" : ""}
@@ -1149,84 +1126,6 @@ function App() {
             </section>
           </>
         )}
-        {tab === "stability" && (
-          <section className="panel p-[26px] max-760:py-[21px] max-760:px-[17px]">
-            <div>
-              <h2>结论对成本口径敏感吗？</h2>
-              <p className="text-[12px] leading-[1.9] text-[#82949f] max-w-[900px] max-760:text-[11px]">
-                固定两榜多数对决规则，分别用综合相对成本、AA、Vals、LiveBench
-                任务成本重算前沿。这里不使用推荐性的倾斜权重。
-              </p>
-            </div>
-            <div>
-              <h2>前沿稳定性指数</h2>
-              <p className="text-[12px] leading-[1.9] text-[#82949f] max-w-[900px] max-760:text-[11px]">
-                固定同一批 {stability.cohort}{" "}
-                个模型：要求三榜有效分数和三源任务成本齐全。固定评分公式 ×
-                四种成本口径，共 4 个场景；指数为入选次数 / 4 ×
-                100。不在样本中的模型不记为零。
-              </p>
-            </div>
-            <Table
-              rowKey="id"
-              size="small"
-              pagination={{ pageSize: 12 }}
-              scroll={{ x: 680 }}
-              dataSource={stability.rows}
-              columns={[
-                {
-                  title: "模型",
-                  dataIndex: "name",
-                  render: (v, r) => (
-                    <button
-                      className="model-link"
-                      onClick={() => setSelected(r.id)}
-                    >
-                      {v}
-                    </button>
-                  ),
-                },
-                {
-                  title: "全球前沿稳定性",
-                  dataIndex: "globalIndex",
-                  sorter: (a, b) => a.globalIndex - b.globalIndex,
-                  render: (v, r) =>
-                    `${v.toFixed(0)} / 100（${r.globalCount}/4）`,
-                },
-                {
-                  title: "开放前沿稳定性",
-                  dataIndex: "openIndex",
-                  sorter: (a, b) => (a.openIndex ?? -1) - (b.openIndex ?? -1),
-                  render: (v, r) =>
-                    v == null
-                      ? "不适用"
-                      : `${v.toFixed(0)} / 100（${r.openCount}/4）`,
-                },
-                {
-                  title: "入选场景",
-                  render: (_, r) => (
-                    <Tooltip
-                      title={
-                        r.scenarios
-                          .filter((s) => (r.openWeights ? s.open : s.global))
-                          .map((s) => `三榜各一票 / ${COSTS[s.costSource]}`)
-                          .join("；") || "无"
-                      }
-                    >
-                      <span className="muted text-[#6b818f] leading-[1.85]">
-                        悬浮查看明细
-                      </span>
-                    </Tooltip>
-                  ),
-                },
-              ]}
-            />
-            <p className="muted text-[11px] text-[#6b818f] leading-[1.85]">
-              这是对已列出的 4
-              种设定的稳健性描述，不是“模型最优的概率”，也不是统计置信度。不同前沿模型可能代表不同预算与能力取舍，不按单一指数替代二维图。
-            </p>
-          </section>
-        )}
         {tab === "sources" && (
           <>
             <SourceQuality sources={data?.sources} />
@@ -1304,7 +1203,7 @@ function App() {
                   key，也无需在聊天中指定模型名称。新模型通过名称规则自动加入；无法确认同一发布版本的名称会分别保留。
                 </p>
                 <p className="max-w-[1120px]">
-                  三站均通过后台 HTTP 读取公开页面、内嵌数据和
+                  四站均通过后台 HTTP 读取公开页面、结构化接口、内嵌数据和
                   CSV，刷新不会启动浏览器。单站失败会保留该站最后一次成功数据并显示原因；不会用空表覆盖。服务关闭、电脑休眠或断网期间不执行抓取，下次启动补更。源站结构或访问策略变化时，适配器可能需要维护。
                 </p>
                 <p className="max-w-[1120px]">
@@ -1317,7 +1216,7 @@ function App() {
           </>
         )}
         <footer className="flex justify-between gap-[20px] pt-[25px] pb-[28px] text-[#a0adb5] text-[9px] leading-[1.9] tracking-[0.025em] max-760:flex-col max-760:gap-[7px] max-760:py-[23px] max-760:text-[8px]">
-          <span>MODEL ATLAS / 三榜融合工作台</span>
+          <span>MODEL ATLAS / 四榜融合工作台</span>
           <span>
             数据最后刷新尝试：{formatTime(data?.lastRefresh)}
             　·　模型族级比较，跨站配置不完全相同
@@ -1536,7 +1435,7 @@ function App() {
               <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                 以下单榜核对独立于综合质量排除开关；原始记录保留，不代表仍参与当前综合计算。
               </p>
-              {Object.keys(NAMES).map((source) => {
+              {COST_SOURCES.map((source) => {
                 const a = sourceAudit(data?.models ?? [], current.id, source);
                 return (
                   <div
@@ -1617,6 +1516,7 @@ function App() {
                     <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                       {r.configuration ?? r.name}
                     </p>
+                    {s === "arena" && <ArenaEvidence record={r} />}
                     <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                       任务成本 {money(r.costTask)} · 输入 / 输出单价{" "}
                       {money(r.priceInput)} / {money(r.priceOutput)} 每百万
@@ -1670,7 +1570,7 @@ function App() {
             如何确定每榜票数？
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            采用多数对决，三榜各一票，不提供任意权重推荐。所有页面和分享链接统一使用当前规则。
+            采用多数对决，四榜各一票，不提供任意权重推荐。所有页面和分享链接统一使用当前规则。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             如何计算综合分？
@@ -1680,7 +1580,9 @@ function App() {
             = 100 ×（胜场 + 0.5 × 平场）÷ 实际有效对手数，无有效对手不赋分。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            多数意见可能循环，直接交手获胜不保证总积分更高。积分表示对当前样本的对决成绩，不是正确率或能力百分比。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。最终主积分相同才按已有榜单排名百分位的等权平均辅助分排序；主辅分都相同保持并列。对手集合可能不同，积分可比性弱于完整三榜样本。对比页展示票数、原始分与分差，不直接混分。辅助分不参与帕累托纵轴或支配判断。
+            多数意见可能循环，直接交手获胜不保证总积分更高。积分表示对当前样本的对决成绩，不是正确率或能力百分比。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。四榜
+            2∶2
+            时该场判平。最终主积分相同才按已有榜单排名百分位的等权平均辅助分排序；主辅分都相同保持并列。对手集合可能不同，积分可比性弱于完整四榜样本。对比页展示票数、原始分与分差，不直接混分。辅助分不参与帕累托纵轴或支配判断。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             搜索、厂商、预算只改变显示；成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
@@ -1689,7 +1591,7 @@ function App() {
             为何更关注开放权重？
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            全量发现三站模型，按源站披露开放状态识别，未设置中国厂商或模型白名单。既显示全球前沿，也显示仅在开放权重模型中计算的前沿，防止闭源最强模型遮住可部署候选。只看开放权重时，全球参照前沿保持原定义。
+            全量发现四站模型，按源站披露开放状态识别，未设置中国厂商或模型白名单。既显示全球前沿，也显示仅在开放权重模型中计算的前沿，防止闭源最强模型遮住可部署候选。只看开放权重时，全球参照前沿保持原定义。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">成本与前沿</h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">

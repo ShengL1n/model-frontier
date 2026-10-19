@@ -1,7 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { SOURCE_INFO, FETCHERS } from "./adapters.mjs";
+import { SOURCE_INFO, FETCHERS, ARENA_FORMAT } from "./adapters.mjs";
 import { aggregate } from "./identity.mjs";
 import { createHistoryStore } from "./history.mjs";
 export const DATA_DIR =
@@ -17,8 +17,10 @@ let state = {
 let running = null;
 const activeSources = (sources) =>
   Object.fromEntries(
-    Object.entries(sources ?? {}).filter(([id]) =>
-      Object.hasOwn(SOURCE_INFO, id),
+    Object.entries(sources ?? {}).filter(
+      ([id, snapshot]) =>
+        Object.hasOwn(SOURCE_INFO, id) &&
+        (id !== "arena" || snapshot?.ingestFormat === ARENA_FORMAT),
     ),
   );
 export const progress = {

@@ -152,6 +152,38 @@ test("snapshots retain per-configuration evidence and ignore unrelated metadata"
   assert.equal(current.aa.rows[0].estimated, true);
   assert.equal(diffSnapshots(current, current).length, 0);
 });
+test("Arena votes, interval and publish date are archived and diffed like other raw evidence", async (t) => {
+  const { history } = await setup(t);
+  const s = source();
+  s.arena = {
+    ingestFormat: "arena-text-overall-v1",
+    fetchedAt: "2026-10-15T00:00:00Z",
+    sourceDate: "2026-10-15",
+    rows: [
+      {
+        name: "Test (max)",
+        configuration: "Test (max)",
+        score: 1500,
+        voteCount: 4000,
+        scoreLower: 1450,
+        scoreUpper: 1550,
+        publishedAt: "2026-10-15",
+      },
+    ],
+  };
+  await history.load(s);
+  assert.equal(history.view().selected.sources.arena.sourceDate, "2026-10-15");
+  const next = structuredClone(s);
+  next.arena.rows[0].score = 1520;
+  next.arena.rows[0].voteCount = 4100;
+  await history.capture(next);
+  const changed = history.view().selected.items[0];
+  assert.equal(changed.type, "updated");
+  assert.deepEqual(changed.fields, ["score", "voteCount"]);
+  assert.equal(changed.before.voteCount, 4000);
+  assert.equal(changed.after.scoreUpper, 1550);
+  assert.equal(changed.after.publishedAt, "2026-10-15");
+});
 
 test("a stable source id cannot join metrics across changed inference settings", () => {
   const before = historySnapshot(source(10, 1, { rawId: "stable-id" }));

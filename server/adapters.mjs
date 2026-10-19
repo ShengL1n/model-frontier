@@ -1,7 +1,14 @@
+import { parquetReadObjects } from "hyparquet";
+import { licenseState } from "./identity.mjs";
 import * as cheerio from "cheerio";
 import { parse } from "csv-parse/sync";
 import { gunzipSync } from "node:zlib";
 export const SOURCE_INFO = {
+  arena: {
+    name: "Arena",
+    url: "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset",
+    metric: "Text Overall · 人类盲测偏好",
+  },
   aa: {
     name: "Artificial Analysis",
     url: "https://artificialanalysis.ai/leaderboards/models",
@@ -26,7 +33,7 @@ const number = (s) => {
 };
 const prices = (s) =>
   [...String(s).matchAll(/\$([\d.]+)/g)].map((m) => Number(m[1]));
-// 三站抓取共用：超时、明确的身份声明、HTTP 状态检查。getText / getBuffer 原本各写一份
+// 多站抓取共用：超时、明确的身份声明、HTTP 状态检查。getText / getBuffer 原本各写一份
 // fetch，只差 Accept，收敛到一处，少一处会漂移的重复。
 async function requestSource(url, timeout = 30000, accept = "*/*") {
   const response = await fetch(url, {
@@ -358,7 +365,110 @@ async function fetchAA() {
     ),
   );
 }
+// Arena 文本总榜使用官方单文件快照，避免依赖页面渲染或不稳定的筛选服务。
+export const ARENA_FORMAT = "arena-text-overall-v1";
+const ARENA_DATA_URL =
+  "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text/latest-00000-of-00001.parquet";
+const ARENA_CREATORS = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  google: "Google",
+  meta: "Meta",
+  xiaomi: "Xiaomi",
+  deepseek: "DeepSeek",
+  zai: "Z AI",
+  moonshot: "Kimi",
+  alibaba: "Alibaba",
+  stepfun: "StepFun",
+  xai: "xAI",
+};
+// V8 的 Date.parse 会把「2026-02-30」滚动成 3 月 2 日，必须在解析后回读 UTC 分量
+// 确认日、月、年没有进位，才能当真实日历日期接受。
+const isValidArenaDate = (s) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s ?? "")) return false;
+  const t = Date.parse(s);
+  if (!Number.isFinite(t)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const parsed = new Date(t);
+  return (
+    parsed.getUTCFullYear() === y &&
+    parsed.getUTCMonth() === m - 1 &&
+    parsed.getUTCDate() === d
+  );
+};
+export function parseArena(data) {
+  if (!Array.isArray(data))
+    throw new Error("Arena 数据格式变化：模型列表不是数组");
+  const overall = data.filter((r) => r?.category === "overall");
+  if (!overall.length) throw new Error("Arena 数据缺少文本 overall 总榜");
+  const names = new Set();
+  const dates = new Set();
+  const rows = overall.map((r) => {
+    if (
+      typeof r.model_name !== "string" ||
+      !r.model_name.trim() ||
+      !Number.isFinite(r.rating) ||
+      !Number.isFinite(r.vote_count) ||
+      r.vote_count < 0 ||
+      !Number.isFinite(r.rating_lower) ||
+      !Number.isFinite(r.rating_upper) ||
+      r.rating_lower > r.rating ||
+      r.rating_upper < r.rating ||
+      !isValidArenaDate(r.leaderboard_publish_date)
+    )
+      throw new Error(
+        `Arena 文本总榜存在无效的模型、评分、票数、区间或发布日期：${
+          typeof r?.model_name === "string" && r.model_name.trim()
+            ? r.model_name
+            : `第 ${overall.indexOf(r) + 1} 行（无有效名称）`
+        }`,
+      );
+    if (names.has(r.model_name)) throw new Error("Arena 文本总榜存在重复配置");
+    names.add(r.model_name);
+    dates.add(r.leaderboard_publish_date);
+    // 真实快照存在空串 organization；空串会穿透 ?? 链变成空 creator，必须先归一化
+    const organization =
+      typeof r.organization === "string" && r.organization.trim()
+        ? r.organization.trim()
+        : null;
+    return {
+      rawId: r.model_name,
+      name: r.model_name,
+      configuration: r.model_name,
+      creator: organization
+        ? (ARENA_CREATORS[organization] ?? organization)
+        : "未披露",
+      score: r.rating,
+      voteCount: r.vote_count,
+      scoreLower: r.rating_lower,
+      scoreUpper: r.rating_upper,
+      publishedAt: r.leaderboard_publish_date,
+      license: r.license ?? null,
+      openWeights: licenseState(r.license),
+      costTask: null,
+      url: SOURCE_INFO.arena.url,
+    };
+  });
+  if (dates.size !== 1)
+    throw new Error("Arena 文本总榜发布日期不一致，拒绝混合快照");
+  return {
+    rows,
+    sourceDate: [...dates][0],
+    ingestFormat: ARENA_FORMAT,
+    notes: [
+      "Arena 官方 Hugging Face 数据集 text / latest / overall；每模型族取非估算、非历史且分数最高的配置。",
+      "人类盲测偏好评分；票数和区间仅属于 Arena，不是综合评分置信度。Arena 未提供任务成本。",
+    ],
+  };
+}
+export async function fetchArena() {
+  const response = await requestSource(ARENA_DATA_URL);
+  const file = await response.arrayBuffer();
+  return parseArena(await parquetReadObjects({ file }));
+}
+
 export const FETCHERS = {
+  arena: fetchArena,
   aa: fetchAA,
   vals: async () => parseVals(await getText(SOURCE_INFO.vals.url)),
   livebench: fetchLivebench,

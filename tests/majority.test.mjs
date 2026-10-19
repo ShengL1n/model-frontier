@@ -8,7 +8,7 @@ const model = (id, scores) => ({
   name: id,
   openWeights: true,
   representatives: Object.fromEntries(
-    ["aa", "vals", "livebench"].flatMap((s, i) =>
+    ["aa", "vals", "livebench", "arena"].flatMap((s, i) =>
       scores[i] == null ? [] : [[s, { score: scores[i], costTask: 1 }]],
     ),
   ),
@@ -234,5 +234,111 @@ test("mathematically equal auxiliary averages remain tied across summation order
   assert.equal(
     ranks.find((r) => r.id === "0").rank,
     ranks.find((r) => r.id === "5").rank,
+  );
+});
+
+// ─── Arena 第四票：每榜一票，四榜 2∶2 判平，不引入新权重 ───
+
+test("four ballots: a 2-2 split is a draw, a 3-1 split follows the majority", () => {
+  const a = model("a", [51, 51, 0, 10]),
+    b = model("b", [50, 50, 100, 20]);
+  const match = majorityMatch(a, b);
+  assert.deepEqual([match.leftWins, match.rightWins, match.tied], [2, 2, 0]);
+  assert.equal(match.result, 0, "四榜 2∶2 为该场平局");
+  for (const row of run([a, b]).rows) {
+    assert.equal(row.composite, 50);
+    assert.deepEqual(row.record, {
+      wins: 0,
+      draws: 1,
+      losses: 0,
+      opponents: 1,
+    });
+  }
+  const c = model("c", [51, 51, 51, 0]),
+    d = model("d", [50, 50, 50, 100]);
+  const decided = majorityMatch(c, d);
+  assert.deepEqual([decided.leftWins, decided.rightWins], [3, 1]);
+  assert.equal(decided.result, 1);
+  assert.deepEqual(
+    run([c, d]).rows.map((r) => r.composite),
+    [100, 0],
+  );
+});
+
+test("a missing Arena ballot leaves the original three-ballot rule intact", () => {
+  const a = model("a", [51, 51, 0, null]),
+    b = model("b", [50, 50, 100, null]);
+  const match = majorityMatch(a, b);
+  assert.equal(match.sharedSources, 3);
+  assert.deepEqual([match.leftWins, match.rightWins, match.tied], [2, 1, 0]);
+  assert.equal(match.result, 1);
+  assert.equal(match.ballots.find((x) => x.source === "arena").vote, null);
+});
+
+test("one shared source never stages a contest even when Arena joins it", () => {
+  const a = model("a", [5, 5, null, null]),
+    b = model("b", [1, null, 1, 1]);
+  // a 只有 aa/vals，b 有 livebench/arena——零个共同有效榜
+  assert.equal(majorityMatch(a, b).result, null);
+  // 仅在 Arena 一榜重合仍不计
+  const c = model("c", [5, 5, 5, 5]),
+    d = model("d", [null, null, null, 1]);
+  const match = majorityMatch(c, d);
+  assert.deepEqual(
+    match.ballots.filter((x) => x.vote !== null).map((x) => x.source),
+    ["arena"],
+  );
+  assert.equal(match.sharedSources, 1);
+  assert.equal(match.result, null);
+});
+
+test("a stale Arena source is excluded like any other stale source", () => {
+  const a = model("a", [3, 3, 3, 3]),
+    b = model("b", [2, 2, 2, 2]);
+  const withRecords = [a, b].map((m) => ({
+    ...m,
+    records: Object.fromEntries(
+      Object.entries(m.representatives).map(([s, r]) => [s, [r]]),
+    ),
+  }));
+  const removed = applyEvidencePolicy(
+    withRecords,
+    { arena: { stale: true } },
+    { excludeStale: true },
+  );
+  assert.equal(removed[0].representatives.arena, undefined);
+  const match = majorityMatch(removed[0], removed[1]);
+  assert.equal(match.sharedSources, 3);
+  assert.equal(match.result, 1);
+});
+
+test("the auxiliary average spans all four sources with Arena included", () => {
+  // 每对 3∶1 的循环：a 胜 b、b 胜 c、c 胜 a；主积分 25/75/50，辅助分为四榜百分位精确平均
+  const models = [
+    model("a", [9, 1, 5, 1]),
+    model("b", [5, 9, 1, 9]),
+    model("c", [1, 5, 9, 5]),
+  ];
+  const result = run(models);
+  assert.deepEqual(
+    result.rows.map((r) => [r.id, r.composite, r.auxiliary]),
+    [
+      ["a", 25, 37.5],
+      ["b", 75, 62.5],
+      ["c", 50, 50],
+    ],
+  );
+  // 撤掉 Arena 后三源辅助分同为 50，证明第四票真实进入辅助平均
+  const withoutArena = run(
+    models.map((m) => ({
+      ...m,
+      representatives: Object.fromEntries(
+        Object.entries(m.representatives).filter(([s]) => s !== "arena"),
+      ),
+    })),
+  );
+  assert.deepEqual(
+    withoutArena.rows.map((r) => r.auxiliary),
+    [50, 50, 50],
   );
 });

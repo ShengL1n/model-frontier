@@ -1,3 +1,5 @@
+import { SCORE_SOURCES, COST_SOURCES } from "../shared/sources.mjs";
+export { COST_SOURCES } from "../shared/sources.mjs";
 function percentileFraction(score, pool) {
   if (pool.length === 1) return [50n, 1n];
   const less = pool.filter((v) => v < score).length;
@@ -24,7 +26,6 @@ export function pareto(rows) {
       ),
   );
 }
-export const COST_SOURCES = ["aa", "vals", "livebench"];
 function median(values) {
   const a = [...values].sort((a, b) => a - b);
   const mid = Math.floor(a.length / 2);
@@ -100,7 +101,7 @@ export function combinedCost(
 }
 // 每榜只比较该榜原始分；同榜同分平票，缺失或被排除估算不参与。
 export function majorityMatch(left, right, { includeEstimated = false } = {}) {
-  const ballots = COST_SOURCES.map((source) => {
+  const ballots = SCORE_SOURCES.map((source) => {
     const a = left.representatives[source],
       b = right.representatives[source];
     const valid =
@@ -173,7 +174,7 @@ export function analyze(
   } = {},
 ) {
   const profile = combinedCostProfile(models, includeEstimated, costSources);
-  const sources = COST_SOURCES;
+  const sources = SCORE_SOURCES;
   const required = 2;
   const eligible = models.filter(
     (m) =>
@@ -311,9 +312,15 @@ export function csvExport(rows, meta = {}) {
     "AA",
     "Vals",
     "LiveBench",
+    "Arena",
     "AA配置",
     "Vals配置",
     "LiveBench配置",
+    "Arena配置",
+    "Arena投票数",
+    "Arena评分区间下限",
+    "Arena评分区间上限",
+    "Arena发布日期",
     "数据时间",
     "评分口径",
     "评分公式",
@@ -350,10 +357,12 @@ export function csvExport(rows, meta = {}) {
         r.frontier ? "是" : "否",
         r.openFrontier ? "是" : "否",
         r.reason,
-        ...["aa", "vals", "livebench"].map((s) => r.representatives[s]?.score),
-        ...["aa", "vals", "livebench"].map(
-          (s) => r.representatives[s]?.configuration,
-        ),
+        ...SCORE_SOURCES.map((s) => r.representatives[s]?.score),
+        ...SCORE_SOURCES.map((s) => r.representatives[s]?.configuration),
+        r.representatives.arena?.voteCount,
+        r.representatives.arena?.scoreLower,
+        r.representatives.arena?.scoreUpper,
+        r.representatives.arena?.publishedAt,
         dataTime,
         scope,
         "两榜多数对决（同积分辅助排序）",
@@ -422,61 +431,5 @@ export function sourceAudit(models, modelId, source) {
     anyVariantOnFrontier: targets.some((r) => frontIds.has(r.id)),
     dominatedBy: [...new Set(dominates.map((r) => r.name))].slice(0, 4),
     population: candidates.length,
-  };
-}
-export function frontierStability(models, { includeEstimated = false } = {}) {
-  const profile = combinedCostProfile(models, includeEstimated);
-  // 各成本场景固定同一样本，缺失不记为失败。
-  const cohort = models.filter(
-    (m) =>
-      COST_SOURCES.every((s) => {
-        const r = m.representatives[s];
-        return Number.isFinite(r?.score) && (includeEstimated || !r.estimated);
-      }) && combinedCost(m, profile, includeEstimated).value !== null,
-  );
-  const records = new Map(
-    cohort.map((m) => [
-      m.id,
-      {
-        id: m.id,
-        name: m.name,
-        openWeights: m.openWeights,
-        globalCount: 0,
-        openCount: 0,
-        scenarios: [],
-      },
-    ]),
-  );
-  for (const costSource of ["composite", "aa", "vals", "livebench"]) {
-    const a = analyze(cohort, {
-      costSource,
-      includeEstimated,
-      costMinSources: 3,
-    });
-    for (const r of a.rows) {
-      const record = records.get(r.id);
-      record.globalCount += Number(r.frontier);
-      record.openCount += Number(r.openFrontier);
-      record.scenarios.push({
-        costSource,
-        global: r.frontier,
-        open: r.openFrontier,
-      });
-    }
-  }
-  return {
-    cohort: cohort.length,
-    scenarioCount: 4,
-    rows: [...records.values()]
-      .map((r) => ({
-        ...r,
-        globalIndex: (r.globalCount / 4) * 100,
-        openIndex: r.openWeights === true ? (r.openCount / 4) * 100 : null,
-      }))
-      .sort(
-        (a, b) =>
-          (b.openIndex ?? -1) - (a.openIndex ?? -1) ||
-          b.globalIndex - a.globalIndex,
-      ),
   };
 }

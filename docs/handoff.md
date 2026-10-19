@@ -1,8 +1,40 @@
 # Handoff
 
-最后更新：2026-10-19。接手时先读本文件、`AGENTS.md` 与 `openspec/specs/`。
+最后更新：2026-10-19。**Arena 第四评分来源已完成开发、全量验证并交付推送；提交与 CI 终态以版本库和 GitHub Actions 为准。** 以下“当前状态”优先于后面的历史记录。
 
-## 当前交付
+## 当前状态：Arena 第四评分来源（已交付）
+
+### 规则与决策
+
+- 用户授权：重新纳入 Arena，官方结构化后台获取、不启动 Chrome；AA / Vals / LiveBench / Arena 每榜一票，四榜 2∶2 为该场平局，主积分同分才用现有辅助分；不引入新权重或原始分混算（ADR-0013）。
+- 用户还要求调研更多权威榜单；HF Open LLM（已停维护）、HELM（数据 2025-11）、Epoch ECI（二次聚合）暂不加票，调研与理由在 `docs/source-assessment.md`。用户尚未对该判断回复，加票与否是下一棒的第一个待决点。
+
+### 本次交付的三组改动
+
+1. **Arena 第四评分来源**（主体）：`shared/sources.mjs` 拆分 `SCORE_SOURCES`（四）与 `COST_SOURCES`（三）；`server/adapters.mjs` 新增 `parseArena` / `fetchArena`（官方单文件 Parquet + `hyparquet@1.31.5`，仅服务端依赖，已验证不进前端 bundle）；`store.mjs` 只认可 `ingestFormat: arena-text-overall-v1` 的新缓存，旧 Arena 缓存清理重取；`history.mjs` 归档票数 / 区间 / 发布日期；`identity.mjs` Arena-only 兜底；前端四来源展示、Arena 单榜证据（票数 / 区间 / 日期）、对比指标与 CSV 列。规格已并入 `openspec/specs/ranking` 与 `share-link`，提案归档于 `openspec/archive/2026-10-19-add-arena/`。
+2. **预算布局修复**：来源下拉与金额框上下整行（`src/main.jsx` / `src/style.css`）。
+3. **删除成本敏感性页面**：五页导航，旧 `#stability?` 回概览（提案在 `openspec/archive/2026-10-19-remove-cost-sensitivity/`）。
+
+### 验证证据（2026-10-19 本机）
+
+- 单测 110/110；覆盖率行 98.34 / 分支 92.61 / 函数 96.25（门禁 92 / 85 / 90）；ESLint、Stylelint、Prettier、build 全绿。
+- 真实四站刷新（`npm run refresh`，纯 HTTP 无浏览器）：arena 416（发布日期 2026-10-15，单一日期）、aa 704、vals 49、livebench 48，均成功无 stale；773 个模型族中 395 个带 Arena 评分。
+- 三套 E2E 全绿（`test:e2e` / `test:portal` / `test:evidence`）；桌面、375px、横屏截图已人工复核四来源布局。
+- 4317 生产服务已按新构建重启。
+
+### 给下一棒的坑
+
+- **V8 `Date.parse("2026-02-30")` 返回合法时间戳（滚动进位）**：Arena 发布日期用 `isValidArenaDate` 做正则 + `Date.parse` + UTC 分量回读三重校验，不要退回只查正则和 parse。
+- Arena 快照共 29 个 category，只有 `overall` 是全量聚合（416 条），其余是语言 / 难度 / 领域切片；取多档会重复计票同一批对话。
+- `source-card` 内 metric 与 notes 都含「人类盲测偏好」字样，E2E 定位用完整 metric 文本避免 strict 冲突。
+- 详情抽屉单榜区标题带「源数据」链接，可访问名以来源名开头而不是完全相等。
+
+### 临时证据（仅本机，可能被清理）
+
+- `/tmp/model-frontier-arena-latest.parquet`：真实下载快照；`/tmp/model-frontier-arena-overall.json`：筛选后 416 配置。
+- HELM / Epoch 调研原件：`/tmp/model-frontier-extra-*`、`/tmp/model-frontier-helm-*`。
+
+## 上次已推送交付（历史记录）
 
 本次按用户授权将全部变更提交到 main 并推送 origin/main。本文记录提交前已完成的本地验证；远端 Actions 结果以对应提交的 CI 终态为准，交付回复提供提交和运行链接。
 
@@ -14,7 +46,7 @@
 - 数据文件退出 Git（ADR-0007），本机缓存仍保留；CI 显式刷新真实数据后执行 E2E，任一来源失败即失败。
 - 六个提案归档到 `openspec/archive/2026-10-19-*/`；早期等权和三榜准入提案属于历史过程，当前规格以 ranking、share-link 与 ADR-0011 / ADR-0012 为准。
 
-## 验证证据
+## 上次已推送版本验证证据
 
 完成两轮评审并修复默认分享状态、辅助分浮点并列与 LiveBench 日期标签三个已证实缺陷。92 个单测全过；覆盖率行 97.80%、分支 92.12%、函数 95.85%（门禁 92 / 85 / 90）；build、ESLint、Stylelint、Prettier、三套 E2E 全绿。额外随机核验 80 组、5654 次模型对决通过。生产服务已按新构建重启于 4317。源码修改后必须重新执行 AGENTS.md 的完整验证流程。
 
