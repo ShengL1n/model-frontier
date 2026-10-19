@@ -7,7 +7,7 @@
 ### 规则与决策
 
 - 用户授权：重新纳入 Arena，官方结构化后台获取、不启动 Chrome；AA / Vals / LiveBench / Arena 每榜一票，四榜 2∶2 为该场平局，主积分同分才用现有辅助分；不引入新权重或原始分混算（ADR-0013）。
-- 用户还要求调研更多权威榜单；HF Open LLM（已停维护）、HELM（数据 2025-11）、Epoch ECI（二次聚合）暂不加票，调研与理由在 `docs/source-assessment.md`。用户尚未对该判断回复，加票与否是下一棒的第一个待决点。
+- 额外权威榜单调研已结案：owner 2026-10-19 裁定 HF Open LLM（已停维护）、HELM（数据 2025-11）、Epoch ECI（二次聚合）均不纳入；理由与证据在 `docs/source-assessment.md`。当前评分固定四票，后续纳入新来源需 owner 点名并更新 ADR。
 
 ### 本次交付的三组改动
 
