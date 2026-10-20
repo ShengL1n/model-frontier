@@ -31,7 +31,7 @@ test("fusion ranking includes scored models without costs and preserves ties and
       model("c", { aa: { score: 10, costTask: 1 }, vals: { score: 10 } }),
       model("unscored", {}),
     ],
-    { costSource: "aa" },
+    { costSource: "aa", minOpponents: 1 },
   );
   const ranked = rankedModels(a.rows);
   assert.deepEqual(
@@ -416,11 +416,14 @@ test("evidence depth handles no ranked models without dividing by zero", () => {
   assert.equal(depth.rankedShare, 0);
 });
 test("evidence depth counts only models that earned a PK score", () => {
-  const a = analyze([
-    model("a", { aa: { score: 20 }, vals: { score: 20 } }),
-    model("b", { aa: { score: 20 }, vals: { score: 20 } }),
-    model("single", { aa: { score: 5 } }),
-  ]);
+  const a = analyze(
+    [
+      model("a", { aa: { score: 20 }, vals: { score: 20 } }),
+      model("b", { aa: { score: 20 }, vals: { score: 20 } }),
+      model("single", { aa: { score: 5 } }),
+    ],
+    { minOpponents: 1 },
+  );
   const depth = evidenceDepth(a.rows, 3);
   assert.equal(a.cohort, 2);
   assert.equal(depth.rankedCount, 2);
@@ -430,6 +433,28 @@ test("evidence depth counts only models that earned a PK score", () => {
   assert.equal(depth.twoBoardPct, 100);
   assert.equal(depth.richBoardPct, 0);
 });
+test("evidence depth counts low-sample matches on both sides", () => {
+  const reps = (scores) =>
+    Object.fromEntries(
+      ["aa", "vals", "livebench", "arena"].map((source, i) => [
+        source,
+        { score: scores[i], costTask: 1 },
+      ]),
+    );
+  const models = [
+    model("x", reps([100, 100, null, null])),
+    model("c", reps([90, 90, 100, 100])),
+    ...Array.from({ length: 11 }, (_, i) =>
+      model("o" + i, reps([null, null, 0, 0])),
+    ),
+  ];
+  const a = analyze(models);
+  const depth = evidenceDepth(a.rows, models.length);
+  // c 对 x 与 11 个 o，共 12 场；11 个 o 两两平局 55 场；x 未获名次但比赛仍计入。
+  assert.equal(depth.rankedCount, 12);
+  assert.equal(depth.matches, 67);
+  assert.equal(depth.twoBoardPct, 100);
+});
 
 test("negative Elo stays sortable and unscored rows stay last in both directions", () => {
   const sources = ["aa", "vals", "livebench", "arena"];
@@ -438,7 +463,9 @@ test("negative Elo stays sortable and unscored rows stay last in both directions
       sources.map((source) => [source, { score, costTask: 1 }]),
     );
   const strong = [...Array(40)].map((_, i) => model("s" + i, all(100 - i)));
-  const rows = analyze([...strong, model("weak", all(0))]).rows;
+  const rows = analyze([...strong, model("weak", all(0))], {
+    minOpponents: 1,
+  }).rows;
   const weak = rows.find((r) => r.id === "weak");
   assert.ok(weak.composite < 0, "弱到一定程度时 Elo 可以为负");
   const compare = compareNullableScores((r) => r.composite);
@@ -454,5 +481,20 @@ test("negative Elo stays sortable and unscored rows stay last in both directions
   assert.deepEqual(
     [...data].sort((a, b) => -compare(a, b, "descend")).map((r) => r.id),
     ["pos", "neg", "none"],
+  );
+});
+test("nullable auxiliary tiebreak keeps missing values last in both directions", () => {
+  const compare = compareNullableScores((r) => r.auxiliary);
+  const data = [
+    { id: "none", auxiliary: null },
+    { id: "value", auxiliary: 12 },
+  ];
+  assert.deepEqual(
+    [...data].sort((a, b) => compare(a, b, "ascend")).map((r) => r.id),
+    ["value", "none"],
+  );
+  assert.deepEqual(
+    [...data].sort((a, b) => -compare(a, b, "descend")).map((r) => r.id),
+    ["value", "none"],
   );
 });

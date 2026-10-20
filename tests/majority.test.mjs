@@ -13,7 +13,8 @@ const model = (id, scores) => ({
     ),
   ),
 });
-const run = (models, options = {}) => analyze(models, options);
+const run = (models, options = {}) =>
+  analyze(models, { minOpponents: 1, ...options });
 const record = (wins, draws, losses, opponents, shared = {}) => ({
   wins,
   draws,
@@ -31,7 +32,7 @@ test("two of three ballots win irrespective of score margins", () => {
   assert.equal(match.result, 1);
   assert.deepEqual([match.leftWins, match.rightWins, match.tied], [2, 1, 0]);
   assert.equal(match.ballots[2].difference, -100);
-  const result = analyze([a, b]);
+  const result = analyze([a, b], { minOpponents: 1 });
   assert.equal(result.required, 2);
   assert.ok(Math.abs(result.rows[0].composite - (1000 + oneWinGap)) < 1e-6);
   assert.ok(Math.abs(result.rows[1].composite - (1000 - oneWinGap)) < 1e-6);
@@ -537,7 +538,7 @@ test("a disconnected match graph yields no global ranking instead of prior-conne
 test("CSV exports BT strength and the Copeland diagnostic beside the Elo main score", () => {
   const a = model("a", [3, 3, 3]),
     b = model("b", [2, 2, 2]);
-  const rows = analyze([a, b]).rows;
+  const rows = analyze([a, b], { minOpponents: 1 }).rows;
   const csv = csvExport(rows);
   for (const header of [
     "PK主积分",
@@ -551,4 +552,61 @@ test("CSV exports BT strength and the Copeland diagnostic beside the Elo main sc
   assert.match(csv, /1060\.2060/);
   assert.match(csv, /100\.0000/);
   assert.match(csv, /"0"/);
+});
+
+test("main ranking requires ten effective opponents while low-sample matches still inform the fit", () => {
+  const models = [
+    model("x", [100, 100, null, null]),
+    model("c", [90, 90, 100, 100]),
+    ...Array.from({ length: 11 }, (_, i) => model("o" + i, [null, null, 0, 0])),
+  ];
+  const gated = analyze(models);
+  const x = gated.rows.find((r) => r.id === "x");
+  const c = gated.rows.find((r) => r.id === "c");
+  assert.equal(gated.requiredOpponents, 10);
+  assert.equal(x.record.opponents, 1);
+  assert.equal(x.winRate, 100);
+  assert.equal(x.rankEligible, false);
+  assert.equal(x.composite, null);
+  assert.equal(x.theta, null);
+  assert.equal(x.btRank, null);
+  assert.equal(x.copelandRank, null);
+  assert.equal(x.plottable, false);
+  assert.equal(x.frontier, false);
+  assert.match(x.reason, /有效对手不足 10（当前 1）/);
+  assert.equal(c.record.opponents, 12);
+  assert.equal(c.rankEligible, true);
+  assert.ok(Number.isFinite(c.composite));
+  assert.ok(c.btRank >= 1);
+  assert.equal(gated.rows.filter((r) => r.composite != null).length, 12);
+
+  const ungated = analyze(models, { minOpponents: 1 });
+  const x2 = ungated.rows.find((r) => r.id === "x");
+  assert.equal(x2.rankEligible, true);
+  assert.ok(Number.isFinite(x2.composite));
+  assert.ok(x2.btRank >= 1);
+  assert.equal(
+    ungated.rows.find((r) => r.id === "c").composite,
+    c.composite,
+    "门槛只影响展示资格，不改变拟合结果",
+  );
+
+  const xLoses = models.map((m) =>
+    m.id === "x"
+      ? {
+          ...m,
+          representatives: {
+            aa: { score: 0, costTask: 1 },
+            vals: { score: 0, costTask: 1 },
+          },
+        }
+      : m,
+  );
+  const cWins = analyze(xLoses).rows.find((r) => r.id === "c");
+  assert.equal(cWins.record.losses, 0);
+  assert.ok(cWins.theta > c.theta, "低样本模型的对局仍进入 BT 拟合");
+
+  const csv = csvExport(gated.rows, { minOpponents: 10 });
+  assert.ok(csv.includes("主榜至少 10 个有效对手"));
+  assert.ok(csv.includes("有效对手不足 10（当前 1）"));
 });

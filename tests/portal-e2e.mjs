@@ -394,6 +394,10 @@ try {
     .locator(".scoring-context")
     .getByText(/四榜各一票/)
     .waitFor();
+  await page
+    .locator(".scoring-context")
+    .getByText(/至少 10 个有效对手/)
+    .waitFor();
   assert.equal(
     await page.locator(".compare-selector .ant-select-selection-item").count(),
     2,
@@ -471,10 +475,11 @@ try {
   assert.ok(majorityCsv.includes("四榜多数对决"));
   assert.ok(
     majorityCsv.includes(
-      "四榜多数对决 Bradley-Terry（共同至少两榜，位次均值仅同分排序）",
+      "四榜多数对决 Bradley-Terry（主榜至少 10 个有效对手，位次均值仅同分排序）",
     ),
   );
   assert.ok(majorityCsv.includes("位次均值仅同分排序"));
+  assert.ok(majorityCsv.includes("主榜至少 10 个有效对手"));
   assert.ok(majorityCsv.includes("BT强度θ"));
   assert.ok(majorityCsv.includes("现行综合分（Copeland）"));
   assert.ok(majorityCsv.includes("名次差"));

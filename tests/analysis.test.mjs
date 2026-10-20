@@ -10,6 +10,8 @@ import {
   sourceAudit,
 } from "../src/analysis.mjs";
 import { familyKey, aggregate } from "../server/identity.mjs";
+const analyzeSmall = (models, options = {}) =>
+  analyze(models, { minOpponents: 1, ...options });
 const model = (id, records, openWeights = true) => ({
   id,
   name: id,
@@ -39,7 +41,7 @@ test("Pareto retains ties, rejects equal-score expensive choices", () => {
   );
 });
 test("missing-source models remain visible but cannot silently enter strict frontier", () => {
-  const r = analyze(
+  const r = analyzeSmall(
     [
       model("a", { aa: { score: 10, costTask: 1 }, livebench: { score: 50 } }),
       model("b", { aa: { score: 20, costTask: 0.5 } }),
@@ -62,8 +64,8 @@ test("cost origin changes frontier without changing scores", () => {
       vals: { score: 20, costTask: 1 },
     }),
   ];
-  const a = analyze(m, { costSource: "aa" });
-  const v = analyze(m, { costSource: "vals" });
+  const a = analyzeSmall(m, { costSource: "aa" });
+  const v = analyzeSmall(m, { costSource: "vals" });
   assert.deepEqual(
     a.rows.map((r) => r.composite),
     v.rows.map((r) => r.composite),
@@ -73,7 +75,7 @@ test("cost origin changes frontier without changing scores", () => {
 });
 test("zero and missing costs never appear on logarithmic chart", () => {
   for (const cost of [0, null, undefined]) {
-    const r = analyze(
+    const r = analyzeSmall(
       [
         model("a", { aa: { score: 10, costTask: cost }, vals: { score: 10 } }),
         model("b", { aa: { score: 20, costTask: 1 }, vals: { score: 20 } }),
@@ -84,7 +86,7 @@ test("zero and missing costs never appear on logarithmic chart", () => {
   }
 });
 test("open frontier is separately computed against open models", () => {
-  const r = analyze(
+  const r = analyzeSmall(
     [
       model(
         "open",
@@ -179,7 +181,7 @@ test("CSV export neutralizes spreadsheet formula injection", () => {
   assert.ok(csv.includes("'=HYPERLINK"));
 });
 test("dominator explanation is independent of alphabetical iteration order", () => {
-  const r = analyze(
+  const r = analyzeSmall(
     [
       model("a", { aa: { score: 10, costTask: 2 }, vals: { score: 10 } }),
       model("z", { aa: { score: 20, costTask: 1 }, vals: { score: 20 } }),
@@ -241,7 +243,7 @@ test("missing-source costs are not imputed or reweighted into combined cost", ()
       vals: { score: 2, costTask: 2 },
     }),
   ];
-  const r = analyze(a, { costSource: "composite", costMinSources: 3 });
+  const r = analyzeSmall(a, { costSource: "composite", costMinSources: 3 });
   assert.equal(r.costProfile.count, 1);
   assert.equal(r.rows[0].cost, 100);
   assert.equal(r.rows[1].cost, null);
@@ -280,8 +282,8 @@ test("Arena never enters the combined cost baseline, per-model cost or composite
         combinedCost(base[i], pb).value - combinedCost(withArena[i], pa).value,
       ) < 1e-9,
     );
-  const rb = analyze(base),
-    ra = analyze(withArena);
+  const rb = analyzeSmall(base),
+    ra = analyzeSmall(withArena);
   assert.deepEqual(
     ra.rows.map((r) => [r.composite, r.cost, r.coverage]),
     rb.rows.map((r) => [r.composite, r.cost, r.coverage]),
@@ -289,7 +291,7 @@ test("Arena never enters the combined cost baseline, per-model cost or composite
 });
 
 test("composite CSV carries Arena raw score, votes, interval and publish date", () => {
-  const rows = analyze([
+  const rows = analyzeSmall([
     model("a", {
       aa: { score: 9, costTask: 1 },
       vals: { score: 9, costTask: 1 },
@@ -342,7 +344,7 @@ test("default two-source cost allows a partial geometric mean but marks its cove
       vals: { score: 20, costTask: 4 },
     }),
   ];
-  const r = analyze(m);
+  const r = analyzeSmall(m);
   assert.equal(r.rows[1].costCoverage, 2);
   assert.ok(Math.abs(r.rows[1].cost - 50) < 1e-8);
   assert.equal(r.rows[1].plottable, true);
@@ -362,7 +364,7 @@ test("extra source mentions cannot raise an objectively lowest scoring model", (
     }),
     model("highest", full(30)),
   ];
-  const result = analyze(models, { costSource: "aa" });
+  const result = analyzeSmall(models, { costSource: "aa" });
   assert.deepEqual(
     result.rows.map((r) => r.winRate),
     [0, 50, 100],

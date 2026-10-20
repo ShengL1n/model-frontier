@@ -77,6 +77,7 @@ const scoreCell = (v) =>
     <span className="text-[10px] leading-[1.85] text-[#6b818f]">未评分</span>
   );
 const compareComposite = compareNullableScores((r) => r.composite);
+const compareAuxiliary = compareNullableScores((r) => r.auxiliary);
 const nameCell = (r, onSelect, id = r.id) => (
   <button className="model-link" onClick={() => onSelect(id)}>
     <span>
@@ -204,7 +205,7 @@ export function Overview({
       )}
       <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         {label === "综合能力领先"
-          ? "按 Bradley-Terry 强度（Elo 尺度）排序，不要求成本已披露；默认至少两榜准入，票数不足的对决不计入战绩。"
+          ? `按 Bradley-Terry 强度（Elo 尺度）排序，不要求成本已披露；主榜至少两榜准入且至少 ${analysis.requiredOpponents} 个有效对手，票数不足的对决不计入战绩。`
           : "在开放权重模型内排序；分数保持全球样本口径。"}{" "}
         并列分数无严格先后。
       </p>
@@ -621,11 +622,21 @@ export function Rankings({
             width: 115,
             sorter: (a, b, sortOrder) =>
               compareComposite(a, b, sortOrder) ||
-              (a.auxiliary ?? -Infinity) - (b.auxiliary ?? -Infinity),
+              compareAuxiliary(a, b, sortOrder),
             render: (value, row) => (
               <div>
-                {scoreCell(value)}
-                {row.record && value != null && (
+                {value == null &&
+                row.rankEligible === false &&
+                row.record?.opponents > 0 ? (
+                  <Tooltip title={row.reason}>
+                    <span className="block max-w-[90px] text-[10px] leading-[1.85] text-[#6b818f]">
+                      证据不足
+                    </span>
+                  </Tooltip>
+                ) : (
+                  scoreCell(value)
+                )}
+                {row.record?.opponents > 0 && (
                   <small className="block text-[10px] text-[#627987]">
                     {row.record.wins} 胜 / {row.record.draws} 平 /{" "}
                     {row.record.losses} 负 ·{" "}
@@ -801,7 +812,10 @@ export function Rankings({
             </span>
             {" · "}
             {depth.rankedCount === 0 ? (
-              <>当前没有模型进入融合排名（需至少两榜共同有效）。</>
+              <>
+                当前没有模型进入融合排名（需至少两榜共同有效且至少{" "}
+                {analysis.requiredOpponents} 个有效对手）。
+              </>
             ) : (
               <>
                 <span className="font-semibold text-[#365d58]">
@@ -809,7 +823,7 @@ export function Rankings({
                 </span>
                 {` / ${depth.totalModels} 个模型进入融合排名（${Math.round(
                   depth.rankedShare * 100,
-                )}%）；对决 `}
+                )}%，需至少 ${analysis.requiredOpponents} 个有效对手）；对决 `}
                 <span className="font-semibold text-[#365d58]">
                   {Math.round(depth.twoBoardPct)}%
                 </span>
@@ -931,7 +945,7 @@ export function Rankings({
               className="ranking-alert"
               type="info"
               showIcon
-              title="单一全局榜：至少两榜参赛，每对共同有效榜单不足两个不比赛。BT 按对手强度校正赛程；不同模型的对手集合仍可能不同，请结合战绩与对手数阅读。"
+              title={`单一全局榜：至少两榜参赛，每对共同有效榜单不足两个不比赛；主榜还要求至少 ${analysis.requiredOpponents} 个有效对手。BT 按对手强度校正赛程；不同模型的对手集合仍可能不同，请结合战绩与对手数阅读。`}
             />
           )}
           {view === "fusion" && !analysis.btConnected && (
@@ -980,7 +994,9 @@ export function Rankings({
                   只纳入所选榜单都有有效分的模型，并只用这些榜单在这组模型中重算
                   BT。榜单和对手范围都可能与主榜不同；各对照组的 Elo
                   以该组中位模型为
-                  1000，积分只在该组内比较，不能与主榜数值直接相减。本表用于观察比较范围变化时排名是否稳定，不能单独说明某个来源的影响，也不代表能力百分比。主榜不变；搜索和筛选只隐藏行，不参与重算。
+                  1000，积分只在该组内比较，不能与主榜数值直接相减。本表是诊断层，不套用主榜的{" "}
+                  {analysis.requiredOpponents}{" "}
+                  个有效对手门槛；组内对手数见列。本表用于观察比较范围变化时排名是否稳定，不能单独说明某个来源的影响，也不代表能力百分比。主榜不变；搜索和筛选只隐藏行，不参与重算。
                 </p>
                 {!selectedCoverage ? (
                   <Empty
@@ -1050,7 +1066,7 @@ export function Rankings({
           />
           <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             {view === "fusion"
-              ? "PK 主积分来自四榜多数对决的 Bradley-Terry 强度（平局半胜，Gamma(2,1) 弱先验），以 Elo 尺度展示：中位模型 1000，400 分差约等于 10∶1 预测胜率。它是相对强度，不是实测胜率或能力百分比；对局图不连通时不给出全局名次。榜单位次均值由同一批来源的排名百分位等权平均，只在 PK 同分时排序。现行 Copeland 胜率与名次作为诊断保留在模型对比和 CSV 中，不进入主榜、前沿或分享参数。"
+              ? `PK 主积分来自四榜多数对决的 Bradley-Terry 强度（平局半胜，Gamma(2,1) 弱先验），以 Elo 尺度展示：中位模型 1000，400 分差约等于 10∶1 预测胜率。它是相对强度，不是实测胜率或能力百分比；主榜只给至少 ${analysis.requiredOpponents} 个有效对手的模型名次，低样本模型保留原始战绩但不参与主榜与前沿；对局图不连通时不给出全局名次。榜单位次均值由同一批来源的排名百分位等权平均，只在 PK 同分时排序。现行 Copeland 胜率与名次作为诊断保留在模型对比和 CSV 中，不进入主榜、前沿或分享参数。`
               : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
           </p>
         </section>
@@ -1122,8 +1138,8 @@ export function Comparison({
     ),
     ...[
       metric("record", "PK 战绩（胜 / 平 / 负）", (r) =>
-        r.record && r.composite != null
-          ? `${r.record.wins} / ${r.record.draws} / ${r.record.losses}（${r.record.opponents} 个对手）`
+        r.record?.opponents > 0
+          ? `${r.record.wins} / ${r.record.draws} / ${r.record.losses}（${r.record.opponents} 个对手）${r.composite == null ? " · 未获主榜名次" : ""}`
           : "未参加正式排名",
       ),
     ],
@@ -1348,7 +1364,9 @@ export function Comparison({
             <p className="text-[11px] leading-[1.9] text-[#627987]">
               两列来自同一批对局。BT 按对手强度估计单一全局相对强度，主榜只使用
               BT；Copeland
-              是原始胜率的诊断值。两者分歧不代表谁对：低覆盖或对手集合不同的模型，差异通常更大。名次差
+              是原始胜率的诊断值。两者分歧不代表谁对：低覆盖或对手集合不同的模型，差异通常更大。主榜名次只给至少{" "}
+              {analysis.requiredOpponents}{" "}
+              个有效对手的模型；低样本模型显示“未排名”，但仍展示原始胜率与对手数。名次差
               = Copeland 名次 − BT 名次。
             </p>
             {!analysis.btConnected && (

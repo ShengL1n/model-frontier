@@ -106,6 +106,7 @@ test("failed source removal applies equally to ability and task costs; models re
   assert.equal(filtered.representatives.aa.score, 50);
   const a = analyze([filtered, { ...filtered, id: "peer", name: "peer" }], {
     costSources: ["aa", "vals"],
+    minOpponents: 1,
   });
   assert.equal(a.rows[0].costCoverage, 2);
   assert.equal(a.rows[0].plottable, true);

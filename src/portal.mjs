@@ -172,13 +172,15 @@ export function coverageSummary(models, { includeEstimated = false } = {}) {
 // 回答“这个融合排名的两两证据实际有多厚”：多少个模型真正拿到 PK 名次，
 // 以及所有计入对决按“共同有效榜数”的分布。每场对决被双方各计一次，
 // 因此先把各模型 opponentsBySharedSources 求和，再除以 2 还原真实场次。
+// 不能只汇总已排名模型：低样本模型未获名次，但它与上榜模型的比赛仍进入
+// BT 拟合，只计一侧会把场次算少。
 // 随“允许估算”等质量开关实时变化，供融合排行榜摘要使用。
 export function evidenceDepth(rows, totalModels = rows.length) {
   const ranked = rows.filter((r) => Number.isFinite(r.composite));
   const rankedCount = ranked.length;
   const byShared = {};
   let directed = 0;
-  for (const r of ranked) {
+  for (const r of rows) {
     const observed = r.record?.opponentsBySharedSources;
     if (!observed) continue;
     for (const key of Object.keys(observed)) {

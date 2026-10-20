@@ -5,6 +5,7 @@ const BT_PRIOR = 1;
 const BT_TOLERANCE = 1e-13;
 const BT_MAX_ITERATIONS = 2000;
 const ELO_SCALE = 400 / Math.LN10;
+const DEFAULT_MIN_OPPONENTS = 10;
 export function rankBy(rows, valueOf) {
   const sorted = [...rows].sort(
     (a, b) =>
@@ -334,6 +335,7 @@ export function analyze(
     includeEstimated = false,
     costMinSources = 2,
     costSources = COST_SOURCES,
+    minOpponents = DEFAULT_MIN_OPPONENTS,
   } = {},
 ) {
   const profile = combinedCostProfile(models, includeEstimated, costSources);
@@ -371,6 +373,7 @@ export function analyze(
     const covered = sources.length > 0 && available.length >= required;
     const record = matches.get(m.id) ?? null;
     const valid = covered && record.opponents > 0;
+    const rankEligible = valid && record.opponents >= minOpponents;
     let composite = null;
     let winRate = null;
     let theta = null;
@@ -379,7 +382,7 @@ export function analyze(
     if (valid) {
       ({ percentiles, auxiliary } = percentileSummary(m, available, pool));
       winRate = (100 * (record.wins + 0.5 * record.draws)) / record.opponents;
-      if (bt.connected) {
+      if (rankEligible && bt.connected) {
         composite = bt.ratings.get(m.id) ?? null;
         theta = bt.thetas.get(m.id) ?? null;
       }
@@ -394,18 +397,21 @@ export function analyze(
         ? `多数对决至少需要 ${required} 榜共同有效的对手，当前没有对手`
         : !bt.connected
           ? `对局图分为 ${bt.components} 个互不相连的组，无法给出单一全局排名`
-          : !Number.isFinite(cost)
-            ? costSource === "composite"
-              ? `综合成本至少需要 ${costMinSources} 个来源的有效成本`
-              : "所选来源未披露任务成本"
-            : cost <= 0
-              ? "成本为 0 或低于源站精度，未放入对数图"
-              : null;
+          : !rankEligible
+            ? `有效对手不足 ${minOpponents}（当前 ${record.opponents}），仅展示原始战绩`
+            : !Number.isFinite(cost)
+              ? costSource === "composite"
+                ? `综合成本至少需要 ${costMinSources} 个来源的有效成本`
+                : "所选来源未披露任务成本"
+              : cost <= 0
+                ? "成本为 0 或低于源站精度，未放入对数图"
+                : null;
     return {
       ...m,
       composite,
       winRate,
       theta,
+      rankEligible,
       auxiliary,
       record,
       costCoverage: combined.coverage,
@@ -425,7 +431,12 @@ export function analyze(
     rankBy(rows, (r) => r.composite).map((r) => [r.id, r.rank]),
   );
   const copelandRanks = bt.connected
-    ? new Map(rankBy(rows, (r) => r.winRate).map((r) => [r.id, r.rank]))
+    ? new Map(
+        rankBy(
+          rows.filter((r) => Number.isFinite(r.composite)),
+          (r) => r.winRate,
+        ).map((r) => [r.id, r.rank]),
+      )
     : new Map();
   for (const row of rows) {
     row.btRank = btRanks.get(row.id) ?? null;
@@ -514,6 +525,7 @@ export function analyze(
     rows,
     sources,
     required,
+    requiredOpponents: minOpponents,
     includeEstimated,
     cohort: eligible.length,
     coverageCohorts,
@@ -571,6 +583,9 @@ export function csvExport(rows, meta = {}) {
   ];
   const scope = typeof meta.scope === "string" ? meta.scope : "";
   const dataTime = isoTime(meta.lastRefresh);
+  const minOpponents = Number.isFinite(meta.minOpponents)
+    ? meta.minOpponents
+    : 10;
   const btRanks = new Map(
     rankBy(rows, (r) => r.composite).map((r) => [r.id, r.rank]),
   );
@@ -623,7 +638,7 @@ export function csvExport(rows, meta = {}) {
         r.representatives.arena?.publishedAt,
         dataTime,
         scope,
-        "四榜多数对决 Bradley-Terry MAP（Gamma(2,1) 先验，平局半胜；PK主积分为 Elo 尺度，位次均值仅同分排序）",
+        `四榜多数对决 Bradley-Terry MAP（Gamma(2,1) 先验，平局半胜；PK主积分为 Elo 尺度，主榜至少 ${minOpponents} 个有效对手，位次均值仅同分排序）`,
         r.record?.wins,
         r.record?.draws,
         r.record?.losses,

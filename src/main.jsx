@@ -86,6 +86,7 @@ const matchesSearch = (row, query) =>
   !query ||
   `${row.name} ${row.creator}`.toLowerCase().includes(query.toLowerCase());
 const compareComposite = compareNullableScores((r) => r.composite);
+const compareAuxiliary = compareNullableScores((r) => r.auxiliary);
 function download(content, type, name) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement("a");
@@ -431,7 +432,7 @@ function App() {
   // 导出附带数据时间与评分口径，保证日后可复核同一结论。
   const scopeLabel = useMemo(() => {
     const parts = [
-      "四榜多数对决 Bradley-Terry（共同至少两榜，位次均值仅同分排序）",
+      `四榜多数对决 Bradley-Terry（主榜至少 ${analysis.requiredOpponents} 个有效对手，位次均值仅同分排序）`,
       `至少 ${analysis.required} 榜`,
       estimated ? "允许 AA 估算" : "排除 AA 估算",
     ];
@@ -443,6 +444,7 @@ function App() {
     return parts.join(" · ");
   }, [
     analysis.required,
+    analysis.requiredOpponents,
     estimated,
     excludeHistorical,
     excludeStale,
@@ -451,8 +453,12 @@ function App() {
     budgetLimit,
   ]);
   const exportMeta = useMemo(
-    () => ({ lastRefresh: data?.lastRefresh, scope: scopeLabel }),
-    [data?.lastRefresh, scopeLabel],
+    () => ({
+      lastRefresh: data?.lastRefresh,
+      scope: scopeLabel,
+      minOpponents: analysis.requiredOpponents,
+    }),
+    [data?.lastRefresh, scopeLabel, analysis.requiredOpponents],
   );
   // 稳定引用，避免 Rankings 内依赖该对象的 useMemo 每次渲染失效。
   const budget = useMemo(
@@ -636,8 +642,7 @@ function App() {
       dataIndex: "composite",
       width: 110,
       sorter: (a, b, sortOrder) =>
-        compareComposite(a, b, sortOrder) ||
-        (a.auxiliary ?? -1) - (b.auxiliary ?? -1),
+        compareComposite(a, b, sortOrder) || compareAuxiliary(a, b, sortOrder),
       render: (v, r) =>
         v == null ? (
           <Tooltip title={r.reason}>
@@ -745,9 +750,10 @@ function App() {
       </div>
       <p className="control-help text-[11px] leading-[1.9] max-760:col-span-full">
         PK 多数对决：AA、Vals、LiveBench、Arena
-        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。有效对局拟合
-        Bradley-Terry 强度并以 Elo
-        尺度显示；同分才按各榜位次均值排序。实际对手集合可能不同，原始分差不混入积分。
+        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛；主榜还要求至少{" "}
+        {analysis.requiredOpponents} 个有效对手。有效对局拟合 Bradley-Terry
+        强度并以 Elo
+        尺度显示；同分才按各榜位次均值排序。低样本模型保留原始战绩但不赋名次。实际对手集合可能不同，原始分差不混入积分。
       </p>
       <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-760:my-[6px] max-760:col-span-full" />
       <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
@@ -1007,7 +1013,8 @@ function App() {
               </em>
             </strong>
             <span className="text-[10px] text-[#8b9aa5] max-1180:text-[9px] max-760:text-[8px] max-760:leading-[1.6] max-760:block">
-              至少 {analysis.required} 榜有效分数 · 不要求成本
+              至少 {analysis.required} 榜有效分数 · 至少{" "}
+              {analysis.requiredOpponents} 个有效对手 · 不要求成本
             </span>
           </div>
           <div className="relative border border-line rounded-[12px] bg-surface shadow-card pt-[20px] px-[21px] pb-[17px] max-1180:py-[18px] max-1180:px-[16px] max-760:pt-[16px] max-760:px-[15px] max-760:pb-[15px] max-760:min-w-0">
@@ -1070,7 +1077,8 @@ function App() {
         <div className="scoring-context">
           <span className="flex items-center gap-[8px] flex-wrap">
             <SettingOutlined aria-hidden="true" /> PK 主积分 · BT / Elo ·
-            四榜各一票 · 至少 {analysis.required} 榜 ·{" "}
+            四榜各一票 · 至少 {analysis.required} 榜 · 至少{" "}
+            {analysis.requiredOpponents} 个有效对手 ·{" "}
             {estimated ? "允许估算" : "排除估算"}
             {excludeHistorical ? " · 排除历史" : ""}
             {excludeStale ? " · 排除过期缓存" : ""}
@@ -1499,6 +1507,13 @@ function App() {
                 。以下保持 PK
                 主积分不变，只切换成本来源；比较样本仍按当前覆盖门槛选取。
               </p>
+              {!current.rankEligible && current.record && (
+                <p className="text-[11px] leading-[1.9] text-[#a9635a] [overflow-wrap:anywhere]">
+                  主榜要求至少 {analysis.requiredOpponents} 个有效对手；当前{" "}
+                  {current.record.opponents}{" "}
+                  个，因此不赋主榜名次，仅展示原始战绩。
+                </p>
+              )}
               <table className="w-full border-collapse text-[10px] mt-[12px] tabular-nums max-760:text-[9px]">
                 <thead>
                   <tr>
@@ -1529,7 +1544,9 @@ function App() {
                         </td>
                         <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-760:py-[10px] max-760:px-[5px]">
                           {!a?.plottable
-                            ? "缺分 / 缺成本"
+                            ? a?.rankEligible === false
+                              ? "证据不足"
+                              : "缺分 / 缺成本"
                             : a.frontier
                               ? "是"
                               : "否"}
@@ -1740,7 +1757,8 @@ function App() {
             2∶2 时该场判平。把所有有效对局交给 Bradley-Terry
             模型（平局半胜、Gamma(2,1) 弱先验）拟合相对强度，再以 Elo
             尺度展示：中位模型 1000，400 分差约等于 10∶1
-            预测胜率。无有效对手不赋分；对局图不连通时不给出跨组件的单一全局名次。
+            预测胜率。主榜还要求至少 {analysis.requiredOpponents}{" "}
+            个有效对手；不足者保留原始战绩与对手数，但不赋主榜名次、不参与前沿。无有效对手不赋分；对局图不连通时不给出跨组件的单一全局名次。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             BT
