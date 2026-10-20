@@ -1058,14 +1058,14 @@ function App() {
               icon: <TrophyOutlined aria-hidden="true" />,
             },
             {
-              key: "compare",
-              label: "模型对比",
-              icon: <SwapOutlined aria-hidden="true" />,
-            },
-            {
               key: "explore",
               label: "前沿探索",
               icon: <DotChartOutlined aria-hidden="true" />,
+            },
+            {
+              key: "compare",
+              label: "模型对比",
+              icon: <SwapOutlined aria-hidden="true" />,
             },
             {
               key: "sources",

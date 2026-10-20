@@ -11,7 +11,18 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const tab = async (name) => {
-  await page.getByRole("tab", { name, exact: true }).click();
+  const target = page.getByRole("tab", { name, exact: true });
+  const clipped = await target.evaluate((el) => {
+    const wrap = el.closest(".ant-tabs-nav-wrap").getBoundingClientRect();
+    const tab = el.getBoundingClientRect();
+    return tab.left < wrap.left || tab.right > wrap.right;
+  });
+  if (clipped) {
+    await page.locator(".portal-tabs .ant-tabs-nav-more").click();
+    await page.getByRole("option", { name, exact: true }).click();
+    return;
+  }
+  await target.click();
 };
 const source = async (name) => {
   await page
