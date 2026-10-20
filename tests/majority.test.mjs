@@ -14,6 +14,13 @@ const model = (id, scores) => ({
   ),
 });
 const run = (models, options = {}) => analyze(models, options);
+const record = (wins, draws, losses, opponents, shared = {}) => ({
+  wins,
+  draws,
+  losses,
+  opponents,
+  opponentsBySharedSources: { 2: 0, 3: 0, 4: 0, ...shared },
+});
 
 test("two of three ballots win irrespective of score margins", () => {
   const a = model("a", [51, 51, 0]),
@@ -26,12 +33,7 @@ test("two of three ballots win irrespective of score margins", () => {
   assert.equal(result.required, 2);
   assert.equal(result.rows[0].composite, 100);
   assert.equal(result.rows[1].composite, 0);
-  assert.deepEqual(result.rows[0].record, {
-    wins: 1,
-    draws: 0,
-    losses: 0,
-    opponents: 1,
-  });
+  assert.deepEqual(result.rows[0].record, record(1, 0, 0, 1, { 3: 1 }));
 });
 
 test("majority cycles produce tied scores with deterministic competition ranks", () => {
@@ -43,7 +45,7 @@ test("majority cycles produce tied scores with deterministic competition ranks",
   const result = run(models);
   for (const r of result.rows) {
     assert.equal(r.composite, 50);
-    assert.deepEqual(r.record, { wins: 1, draws: 0, losses: 1, opponents: 2 });
+    assert.deepEqual(r.record, record(1, 0, 1, 2, { 3: 2 }));
   }
   assert.deepEqual(
     rankedModels(result.rows).map((r) => r.rank),
@@ -55,13 +57,40 @@ test("majority cycles produce tied scores with deterministic competition ranks",
   );
 });
 
+test("opponent records group matches by the number of shared valid score sources", () => {
+  const result = run([
+    model("full-a", [5, 5, 5, 5]),
+    model("full-b", [4, 4, 4, 4]),
+    model("three", [3, 3, 3, null]),
+    model("two", [2, 2, null, null]),
+  ]);
+  assert.deepEqual(
+    result.rows.map((row) => row.record.opponentsBySharedSources),
+    [
+      { 2: 1, 3: 1, 4: 1 },
+      { 2: 1, 3: 1, 4: 1 },
+      { 2: 1, 3: 2, 4: 0 },
+      { 2: 3, 3: 0, 4: 0 },
+    ],
+  );
+  for (const row of result.rows) {
+    assert.equal(
+      Object.values(row.record.opponentsBySharedSources).reduce(
+        (total, count) => total + count,
+        0,
+      ),
+      row.record.opponents,
+    );
+  }
+});
+
 test("tied ballots and tied contests count half a match, never raw-score tiebreaks", () => {
   const a = model("a", [1, 10, 5]),
     b = model("b", [2, 9, 5]);
   assert.equal(majorityMatch(a, b).result, 0);
   for (const r of run([a, b]).rows) {
     assert.equal(r.composite, 50);
-    assert.deepEqual(r.record, { wins: 0, draws: 1, losses: 0, opponents: 1 });
+    assert.deepEqual(r.record, record(0, 1, 0, 1, { 3: 1 }));
   }
   assert.equal(majorityMatch(a, model("c", [1, 10, 4])).result, 1);
   assert.equal(majorityMatch(a, a).tied, 3);
@@ -140,9 +169,14 @@ test("costs do not change ballots, ranks or opponents; exports include exact res
     [2],
   );
   const csv = csvExport(a.rows, { scope: "多数对决 v1" });
+  assert.match(csv, /PK主积分/);
+  assert.match(csv, /榜单位次均值（仅PK同分排序）/);
   assert.match(csv, /评分公式/);
   assert.match(csv, /对手数/);
-  assert.match(csv, /两榜多数对决/);
+  assert.match(csv, /双方共有2个有效评分榜的对局数/);
+  assert.match(csv, /双方共有3个有效评分榜的对局数/);
+  assert.match(csv, /双方共有4个有效评分榜的对局数/);
+  assert.match(csv, /四榜多数对决/);
 });
 
 test("two-source rule admits two-source models but never counts a one-source overlap", () => {
@@ -173,6 +207,53 @@ test("two-source rule admits two-source models but never counts a one-source ove
     ],
   );
   assert.equal(run(rows.slice(1), {}).rows[0].composite, null);
+});
+
+test("coverage cohorts use a fixed source mask and ignore extra model scores", () => {
+  const a = model("a", [10, 10, 0, 0]);
+  const b = model("b", [0, 0, 10, 10]);
+  const c = model("c", [9, 9]);
+  const d = model("d", [1, null, 100, 100]);
+  const result = run([a, b, c, d]);
+  const aaVals = result.coverageCohorts.find(({ id }) => id === "aa+vals");
+
+  assert.deepEqual(aaVals.sources, ["aa", "vals"]);
+  assert.equal(aaVals.count, 3);
+  assert.deepEqual(
+    aaVals.rows.map(({ id }) => id),
+    ["a", "b", "c"],
+  );
+  assert.deepEqual(
+    aaVals.rows.map(({ record, composite }) => [record.opponents, composite]),
+    [
+      [2, 100],
+      [2, 0],
+      [2, 50],
+    ],
+  );
+  assert.equal(result.rows.find(({ id }) => id === "a").composite, 50);
+});
+
+test("coverage cohorts prefer more sources before larger sample size", () => {
+  const a = model("a", [3, 3, 3]);
+  const b = model("b", [2, 2, 2]);
+  const c = model("c", [4, 4]);
+  const { coverageCohorts } = run([a, b, c]);
+
+  assert.deepEqual(coverageCohorts[0].sources, ["aa", "vals", "livebench"]);
+  assert.equal(coverageCohorts[0].count, 2);
+  assert.equal(coverageCohorts.find(({ id }) => id === "aa+vals").count, 3);
+});
+
+test("coverage cohorts omit single-model and non-shared source combinations", () => {
+  const single = run([model("only", [1, 1, 1, 1])]);
+  const split = run([
+    model("left", [1, 1]),
+    model("right", [null, null, 1, 1]),
+  ]);
+
+  assert.deepEqual(single.coverageCohorts, []);
+  assert.deepEqual(split.coverageCohorts, []);
 });
 
 test("auxiliary tiebreak sorts final standings without altering matches or Pareto membership", () => {
@@ -252,6 +333,7 @@ test("four ballots: a 2-2 split is a draw, a 3-1 split follows the majority", ()
       draws: 1,
       losses: 0,
       opponents: 1,
+      opponentsBySharedSources: { 2: 0, 3: 0, 4: 1 },
     });
   }
   const c = model("c", [51, 51, 51, 0]),

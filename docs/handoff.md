@@ -1,28 +1,39 @@
 # Handoff
 
-最后更新：2026-10-19。**Arena 第四评分来源已完成开发、全量验证并交付推送；提交与 CI 终态以版本库和 GitHub Actions 为准。** 以下“当前状态”优先于后面的历史记录。
+最后更新：2026-10-20。**排行榜展示三组变更（PK 主积分表述澄清、证据深度摘要、固定来源组合对照）已完成开发与全量验证；提交、推送与 CI 终态以版本库和 GitHub Actions 为准。** 以下“当前状态”优先于后面的历史记录。
 
-## 当前状态：Arena 第四评分来源（已交付）
+## 当前状态：本轮交付（已交付）
 
 ### 规则与决策
 
-- 用户授权：重新纳入 Arena，官方结构化后台获取、不启动 Chrome；AA / Vals / LiveBench / Arena 每榜一票，四榜 2∶2 为该场平局，主积分同分才用现有辅助分；不引入新权重或原始分混算（ADR-0013）。
-- 额外权威榜单调研已结案：owner 2026-10-19 裁定 HF Open LLM（已停维护）、HELM（数据 2025-11）、Epoch ECI（二次聚合）均不纳入；理由与证据在 `docs/source-assessment.md`。当前评分固定四票，后续纳入新来源需 owner 点名并更新 ADR。
+- 排行榜展示三组变更同批交付，提案归档于 `openspec/archive/2026-10-20-*/`（其中 PK 表述澄清与来源组合对照两份 proposal 为归档时按已实现行为补记）：
+  1. **PK 主积分表述澄清**：全站「综合分 / 融合积分」改名「PK 主积分」，辅助分统一表述为「榜单位次均值（仅 PK 同分排序）」——不作第五票、不与主积分再次合并、不参与帕累托与支配判断。数值计算零变化。
+  2. **证据深度摘要**：融合榜评分说明处一行摘要（进入排名的模型数 / 占比，仅 2 榜裁决与 3 榜以上裁决的占比），`evidenceDepth` 在 `src/portal.mjs`，纯展示衍生，不进分享链接。
+  3. **固定来源组合对照**：融合榜新增来源组合选择器（`coverageCohorts`，每队列只用所选来源计票）与对局覆盖明细（双方共有 2 / 3 / 4 榜对局数，进悬浮战绩、对比页与 CSV）；分享链接新增 `cm` 参数，ADR-0002 已补记。
+- 主榜计票、成本口径、前沿判定均不变；三组都属展示与对照层。
+- **源站抓取重试加固**（同批一并交付）：`requestSource` 超时提高到 45 秒，超时 / 网络错误 / 408 / 425 / 429 / 5xx 自动重试一次，响应体读取纳入重试范围；LiveBench 候选文件 404 仍按「换下一布局」处理，仅可重试错误才向上抛失败整站；`fetchArena` 保留重试。
 
-### 本次交付的三组改动
+### 验证证据（2026-10-20 本机）
 
-1. **Arena 第四评分来源**（主体）：`shared/sources.mjs` 拆分 `SCORE_SOURCES`（四）与 `COST_SOURCES`（三）；`server/adapters.mjs` 新增 `parseArena` / `fetchArena`（官方单文件 Parquet + `hyparquet@1.31.5`，仅服务端依赖，已验证不进前端 bundle）；`store.mjs` 只认可 `ingestFormat: arena-text-overall-v1` 的新缓存，旧 Arena 缓存清理重取；`history.mjs` 归档票数 / 区间 / 发布日期；`identity.mjs` Arena-only 兜底；前端四来源展示、Arena 单榜证据（票数 / 区间 / 日期）、对比指标与 CSV 列。规格已并入 `openspec/specs/ranking` 与 `share-link`，提案归档于 `openspec/archive/2026-10-19-add-arena/`。
-2. **预算布局修复**：来源下拉与金额框上下整行（`src/main.jsx` / `src/style.css`）。
-3. **删除成本敏感性页面**：五页导航，旧 `#stability?` 回概览（提案在 `openspec/archive/2026-10-19-remove-cost-sensitivity/`）。
+- 单测 118/118；覆盖率行 98.39 / 分支 92.58 / 函数 96.14（门禁 92 / 85 / 90）；ESLint、Stylelint、Prettier、build 全绿。
+- 4317 生产服务按最终构建重启；真实刷新四源全部成功（arena 416 / aa 706 / vals 50 / livebench 48）。
+- 三套 E2E 全绿（`test:e2e` / `test:portal` / `test:evidence`），pageErrors / errors 均空。
 
-### 验证证据（2026-10-19 本机）
+### 给下一棒的坑（本轮新增）
 
-- 单测 110/110；覆盖率行 98.34 / 分支 92.61 / 函数 96.25（门禁 92 / 85 / 90）；ESLint、Stylelint、Prettier、build 全绿。
-- 真实四站刷新（`npm run refresh`，纯 HTTP 无浏览器）：arena 416（发布日期 2026-10-15，单一日期）、aa 704、vals 49、livebench 48，均成功无 stale；773 个模型族中 395 个带 Arena 评分。
-- 三套 E2E 全绿（`test:e2e` / `test:portal` / `test:evidence`）；桌面、375px、横屏截图已人工复核四来源布局。
-- 4317 生产服务已按新构建重启。
+- **hyparquet 的 `parquetReadObjects` 只收真 ArrayBuffer**：`getBuffer` 返回 Node Buffer，喂给 Arena Parquet 解析会抛 "First argument to DataView constructor must be an ArrayBuffer"；`crypto.subtle` 路径（AA 加密数据）可以吃 Buffer——两条路径别混用返回类型，`fetchArena` 必须经 `response.arrayBuffer()`。
 
-### 给下一棒的坑
+- **`cm` 合法性硬编码在 `src/share.mjs` 的 `validCoverageMask`**：来源须属 `shared/sources.mjs` 白名单、按白名单顺序 `+` 连接、至少两个且不重复。`analysis.coverageCohorts` 的排序（来源数降序、其次覆盖模型数降序）决定「不带 `cm` 的分享」默认恢复到哪个对照——改排序即改默认组合。
+- **`evidenceDepth` 的两个占比用「有向计数 ÷ 总有向计数」计算**：每场对决双方各计一次，先求和再除 2 还原场次；两个占比因此精确互补到 100，不要改成 `100 - x` 的浮点写法。
+- **`coverageCohorts` 按 2^来源数 − 1 个掩码枚举队列并逐队列两两对决**：四来源下开销可忽略；未来若加第五个评分来源，需重新评估组合数与计算成本。
+- 上一轮 Arena 的坑仍然全部有效，见下方历史记录。
+
+## 上一轮交付：Arena 第四评分来源（2026-10-19，历史）
+
+- 规则要点：四榜各一票、2∶2 平局、Arena 只取 `overall`、不引入新权重或原始分混算（ADR-0013）；额外权威榜单调研结案均不纳入（`docs/source-assessment.md`），后续纳入新来源需 owner 点名并更新 ADR。
+- 摄取要点：官方单文件 Parquet + `hyparquet`（仅服务端依赖，不进前端 bundle）；`store.mjs` 只认 `ingestFormat: arena-text-overall-v1` 的新缓存，旧 Arena 缓存清理重取；`history.mjs` 归档票数 / 区间 / 发布日期。
+
+### 给下一棒的坑（Arena 摄取与展示）
 
 - **V8 `Date.parse("2026-02-30")` 返回合法时间戳（滚动进位）**：Arena 发布日期用 `isValidArenaDate` 做正则 + `Date.parse` + UTC 分量回读三重校验，不要退回只查正则和 parse。
 - Arena 快照共 29 个 category，只有 `overall` 是全量聚合（416 条），其余是语言 / 难度 / 领域切片；取多档会重复计票同一批对话。
@@ -124,6 +135,6 @@ npm run test:e2e && npm run test:portal && npm run test:evidence
 ## 文件地图
 
 - `src/Chart.jsx` 前沿散点 / 斩杀区；`src/main.jsx` 探索页（应用外壳、分享状态、模型全景表）；`src/Portal.jsx` 门户六页（排行榜 / 对比 / chip）。
-- `src/analysis.mjs` 评分与帕累托（`dominatedBy` 在此计算，供斩杀区与 tooltip 共用）；`src/portal.mjs` 榜单行池与导出；`src/share.mjs` 分享链接编解码；`src/Evidence.jsx` 证据徽标。
+- `src/analysis.mjs` 评分、帕累托与来源组合队列（`coverageCohorts`；`dominatedBy` 在此计算，供斩杀区与 tooltip 共用）；`src/portal.mjs` 榜单行池、证据深度摘要与导出；`src/share.mjs` 分享链接编解码；`src/Evidence.jsx` 证据徽标。
 - `server/adapters.mjs` 三站摄取（AA 走 manifest 加密链路，见上）；`server/store.mjs` 抓取编排与落库闸门；`server/index.mjs` 单服务前后一体 + 定时抓取；`data/snapshot.json` 为聚合产物（已退出版本控制，ADR-0007）。
 - 规格在 `openspec/specs/<能力>/spec.md`；ADR 在 `docs/adr/`。

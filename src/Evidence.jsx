@@ -174,7 +174,8 @@ export function HistorySummary({ history, onOpen }) {
       </div>
       <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         <InfoCircleOutlined aria-hidden="true" />{" "}
-        相同数据不重复归档；抓取失败沿用成功缓存，不计作删除。综合分受比较样本与设置影响，不作为历史能力涨跌依据。
+        相同数据不重复归档；抓取失败沿用成功缓存，不计作删除。PK
+        主积分与榜单位次均值受比较样本和设置影响，不作为历史能力涨跌依据。
       </p>
     </section>
   );

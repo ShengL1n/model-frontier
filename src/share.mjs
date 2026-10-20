@@ -25,12 +25,23 @@ const DEFAULTS = {
   creator: "",
   openness: "all",
   scoredOnly: false,
+  coverageMaskId: "",
   nativeEstimated: false,
   nativeHistorical: false,
   budgetSource: "none",
   budgetLimit: null,
   selection: [],
 };
+function validCoverageMask(value) {
+  if (typeof value !== "string") return null;
+  const selected = value.split("+");
+  if (selected.length < 2 || new Set(selected).size !== selected.length)
+    return null;
+  const canonical = SOURCES.filter((source) => selected.includes(source));
+  return canonical.length === selected.length && canonical.join("+") === value
+    ? value
+    : null;
+}
 const BOOL_KEYS = {
   includeEstimated: "est",
   excludeHistorical: "eh",
@@ -69,6 +80,8 @@ export function encodeShareState(state = {}) {
   for (const [key, short] of Object.entries(BOOL_KEYS)) {
     if (state[key] === true) params.set(short, "1");
   }
+  const coverageMaskId = validCoverageMask(state.coverageMaskId);
+  if (coverageMaskId) params.set("cm", coverageMaskId);
   // 没有有效上限的预算来源不编码：解码端会把缺 bl 的 bs 折叠为不限制，保持往返一致。
   if (
     state.budgetSource &&
@@ -114,6 +127,8 @@ export function decodeShareState(hash = "") {
   for (const [key, short] of Object.entries(BOOL_KEYS)) {
     if (params.get(short) === "1") state[key] = true;
   }
+  const coverageMaskId = validCoverageMask(params.get("cm"));
+  if (coverageMaskId) state.coverageMaskId = coverageMaskId;
   const rawBudget = params.get("bs");
   if (rawBudget != null && BUDGET_SOURCES.includes(rawBudget))
     state.budgetSource = rawBudget;

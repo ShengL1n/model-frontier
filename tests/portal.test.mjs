@@ -4,6 +4,7 @@ import { analyze } from "../src/analysis.mjs";
 import {
   VENDOR_CHIPS,
   coverageSummary,
+  evidenceDepth,
   filterModels,
   nativeCsvExport,
   nativeRanking,
@@ -379,4 +380,52 @@ test("vendor chip counts use the full pool, skip creator-less rows, and keep chi
   assert.equal(byValue.Kimi, 1);
   assert.equal(byValue.Anthropic, 0);
   assert.equal(byValue["Z AI"], 0);
+});
+test("evidence depth summarizes ranked count and shared-board match distribution", () => {
+  const rows = [
+    {
+      id: "a",
+      composite: 80,
+      record: { opponentsBySharedSources: { 2: 1, 3: 1 } },
+    },
+    {
+      id: "b",
+      composite: 70,
+      record: { opponentsBySharedSources: { 2: 1, 3: 1 } },
+    },
+    { id: "c", composite: 60, record: { opponentsBySharedSources: { 3: 2 } } },
+    { id: "d", composite: null, record: null },
+  ];
+  const depth = evidenceDepth(rows, 4);
+  assert.equal(depth.rankedCount, 3);
+  assert.equal(depth.totalModels, 4);
+  assert.equal(depth.rankedShare, 0.75);
+  // 有向计数：2 榜 = 1+1 = 2 → 1 场；3 榜 = 1+1+2 = 4 → 2 场；共 3 场。
+  assert.equal(depth.matches, 3);
+  assert.ok(Math.abs(depth.twoBoardPct - 100 / 3) < 1e-9);
+  assert.ok(Math.abs(depth.richBoardPct - 200 / 3) < 1e-9);
+  assert.ok(Math.abs(depth.twoBoardPct + depth.richBoardPct - 100) < 1e-9);
+});
+test("evidence depth handles no ranked models without dividing by zero", () => {
+  const depth = evidenceDepth([{ id: "x", composite: null, record: null }], 1);
+  assert.equal(depth.rankedCount, 0);
+  assert.equal(depth.matches, 0);
+  assert.equal(depth.twoBoardPct, 0);
+  assert.equal(depth.richBoardPct, 0);
+  assert.equal(depth.rankedShare, 0);
+});
+test("evidence depth counts only models that earned a PK score", () => {
+  const a = analyze([
+    model("a", { aa: { score: 20 }, vals: { score: 20 } }),
+    model("b", { aa: { score: 20 }, vals: { score: 20 } }),
+    model("single", { aa: { score: 5 } }),
+  ]);
+  const depth = evidenceDepth(a.rows, 3);
+  assert.equal(a.cohort, 2);
+  assert.equal(depth.rankedCount, 2);
+  assert.equal(depth.totalModels, 3);
+  // a、b 仅共同 aa+vals 两榜且都平票 → 唯一一场为 2 榜裁决；单榜模型不计。
+  assert.equal(depth.matches, 1);
+  assert.equal(depth.twoBoardPct, 100);
+  assert.equal(depth.richBoardPct, 0);
 });

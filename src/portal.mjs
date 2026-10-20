@@ -169,6 +169,40 @@ export function coverageSummary(models, { includeEstimated = false } = {}) {
   }
   return { counts, groups };
 }
+// 证据深度摘要（纯展示衍生，不改变任何分数、名次、前沿或导出）。
+// 回答“这个融合排名的两两证据实际有多厚”：多少个模型真正拿到 PK 名次，
+// 以及所有计入对决按“共同有效榜数”的分布。每场对决被双方各计一次，
+// 因此先把各模型 opponentsBySharedSources 求和，再除以 2 还原真实场次。
+// 随“允许估算”等质量开关实时变化，供融合排行榜摘要使用。
+export function evidenceDepth(rows, totalModels = rows.length) {
+  const ranked = rows.filter((r) => Number.isFinite(r.composite));
+  const rankedCount = ranked.length;
+  const byShared = {};
+  let directed = 0;
+  for (const r of ranked) {
+    const observed = r.record?.opponentsBySharedSources;
+    if (!observed) continue;
+    for (const key of Object.keys(observed)) {
+      const value = observed[key] || 0;
+      byShared[key] = (byShared[key] || 0) + value;
+      directed += value;
+    }
+  }
+  const matches = directed / 2;
+  const twoDirected = byShared[2] || 0;
+  // 用「有向计数 / 总有向计数」算占比：每场对决双方各计一次，约去相同的 /2，
+  // 两个百分比精确互补到 100，避免 100 - x 的浮点尾差。
+  const pct = (directedCount) =>
+    directed > 0 ? (100 * directedCount) / directed : 0;
+  return {
+    rankedCount,
+    totalModels,
+    rankedShare: totalModels > 0 ? rankedCount / totalModels : 0,
+    matches,
+    twoBoardPct: pct(twoDirected),
+    richBoardPct: pct(directed - twoDirected),
+  };
+}
 export function nativeCsvExport(rows, meta = {}) {
   const cell = (v) =>
     '"' +

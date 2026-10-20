@@ -104,7 +104,7 @@ try {
     0,
   );
   await page
-    .locator(".ranking-table .ant-table-tbody tr[data-row-key]")
+    .locator(".ranking-main-table .ant-table-tbody tr[data-row-key]")
     .first()
     .waitFor();
   await overflow();
@@ -113,11 +113,11 @@ try {
   const csv = await downloadPromise;
   assert.equal(csv.suggestedFilename(), "model-ranking.csv");
   const fusionCsv = await readFile(await csv.path(), "utf8");
-  assert.ok(fusionCsv.includes("综合分"));
+  assert.ok(fusionCsv.includes("PK主积分"));
   assert.ok(fusionCsv.includes("评分口径"), "导出缺少评分口径列");
   assert.ok(fusionCsv.includes("数据时间"), "导出缺少数据时间列");
   const boxes = page.locator(
-    ".ranking-table .ant-table-tbody tr[data-row-key] .ant-checkbox-input",
+    ".ranking-main-table .ant-table-tbody tr[data-row-key] .ant-checkbox-input",
   );
   await boxes.nth(0).check();
   await boxes.nth(1).check();
@@ -196,6 +196,76 @@ try {
     path: "test-artifacts/rankings.png",
     fullPage: true,
   });
+  const coverageDiagnostic = page.locator(".coverage-cohort-diagnostic");
+  const coverageSummary = coverageDiagnostic.locator("summary");
+  await coverageSummary.click();
+  await coverageDiagnostic
+    .getByText(/只纳入所选榜单都有有效分的模型/)
+    .waitFor();
+  const coverageCount = Number(
+    (await coverageSummary.innerText()).match(/· (\d+) 个模型/)?.[1],
+  );
+  const coverageSelect = coverageDiagnostic.getByRole("combobox", {
+    name: "同一组榜单对照",
+  });
+  await coverageSelect.waitFor();
+  let selectedCoverageMask = null;
+  let selectedCoverageLabel = null;
+  if (coverageCount >= 2) {
+    const coverageTable = coverageDiagnostic.locator(".coverage-cohort-table");
+    await coverageTable
+      .getByRole("columnheader", { name: "对照 PK 积分", exact: true })
+      .waitFor();
+    await coverageDiagnostic
+      .locator(".coverage-cohort-table")
+      .getByRole("columnheader", { name: "主榜名次", exact: true })
+      .waitFor();
+    await coverageSelect.click();
+    const coverageOptions = page.getByRole("option");
+    const coverageOptionCount = await coverageOptions.count();
+    assert.ok(coverageOptionCount >= 1, "榜单组合对照选项为空");
+    if (coverageOptionCount > 1) {
+      const initialCoverageMask = await page.evaluate(() =>
+        new URLSearchParams(location.hash.split("?")[1] ?? "").get("cm"),
+      );
+      await coverageOptions.nth(1).click();
+      await page.waitForFunction((previous) => {
+        const current = new URLSearchParams(
+          location.hash.split("?")[1] ?? "",
+        ).get("cm");
+        return current && current !== previous;
+      }, initialCoverageMask);
+      selectedCoverageMask = await page.evaluate(() =>
+        new URLSearchParams(location.hash.split("?")[1] ?? "").get("cm"),
+      );
+      selectedCoverageLabel = await coverageSelect
+        .locator("xpath=..")
+        .innerText();
+      assert.ok(selectedCoverageMask, "选择榜单组合后分享链接没有 cm 参数");
+      await page.reload();
+      await coverageSummary.click();
+      assert.equal(
+        await page.evaluate(() =>
+          new URLSearchParams(location.hash.split("?")[1] ?? "").get("cm"),
+        ),
+        selectedCoverageMask,
+        "重开分享链接后榜单组合参数发生变化",
+      );
+      assert.equal(
+        await coverageDiagnostic
+          .getByRole("combobox", { name: "同一组榜单对照" })
+          .locator("xpath=..")
+          .innerText(),
+        selectedCoverageLabel,
+        "重开分享链接后没有恢复所选榜单组合",
+      );
+    }
+  } else {
+    await coverageDiagnostic
+      .getByText(/没有至少两个模型拥有相同的两榜以上有效数据/)
+      .waitFor();
+  }
+  await coverageSummary.click();
   // 厂商快捷筛选：chip 与厂商下拉同源，激活态写入分享链接，再次点击取消
   await page.locator(".creator-chip", { hasText: "DeepSeek" }).click();
   await page.waitForFunction(() => location.hash.includes("cr="));
@@ -333,6 +403,14 @@ try {
     location.hash = "#compare?score=majority&sel=glm53,deepseekv41flash";
   });
   await page.locator(".majority-comparison").waitFor();
+  await page
+    .locator(".majority-comparison")
+    .getByRole("columnheader", { name: "共同有效榜", exact: true })
+    .waitFor();
+  await page
+    .locator(".majority-comparison")
+    .getByText(/\d\/4 榜 · (计入 PK|不计 PK)/)
+    .waitFor();
   // 第四票接入后，具体票数随真实数据变化，只锁定「有裁决」与 Arena 计票列存在
   await page
     .locator(".majority-comparison")
@@ -351,11 +429,17 @@ try {
     location.hash = "#compare?score=majority2&sel=glm53,deepseekv41flash";
   });
   await page
-    .getByRole("cell", { name: "同积分辅助分（仅用于排序）", exact: true })
+    .getByRole("cell", {
+      name: "榜单位次均值（仅 PK 同分排序）",
+      exact: true,
+    })
     .waitFor();
   await page.reload();
   await page
-    .getByRole("cell", { name: "同积分辅助分（仅用于排序）", exact: true })
+    .getByRole("cell", {
+      name: "榜单位次均值（仅 PK 同分排序）",
+      exact: true,
+    })
     .waitFor();
   await tab("融合排行榜");
   assert.equal(
@@ -370,16 +454,28 @@ try {
   );
   await page
     .locator(".ranking-main-table")
-    .getByRole("columnheader", { name: "多数对决积分", exact: true })
+    .getByRole("columnheader", { name: "PK 主积分", exact: true })
     .waitFor();
+  const opponentCount = page
+    .locator(".ranking-main-table")
+    .getByText(/\d+ 个对手/)
+    .first();
+  await opponentCount.hover();
+  await page.getByText(/双方共有 2 个有效评分榜/).waitFor();
   const majorityExport = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出当前榜单", exact: true }).click();
   const majorityCsv = await readFile(
     await (await majorityExport).path(),
     "utf8",
   );
-  assert.ok(majorityCsv.includes("两榜多数对决"));
-  assert.ok(majorityCsv.includes("同积分辅助排序"));
+  assert.ok(majorityCsv.includes("四榜多数对决"));
+  assert.ok(
+    majorityCsv.includes(
+      "四榜多数对决（共同至少两榜，PK 主积分同分按榜单位次均值排序）",
+    ),
+  );
+  assert.ok(majorityCsv.includes("位次均值仅PK同分排序"));
+  assert.ok(majorityCsv.includes("双方共有2个有效评分榜的对局数"));
   await tab("模型对比");
   // 全默认分享也必须覆盖接收方不同的本机偏好。
   const receiver = await browser.newPage();

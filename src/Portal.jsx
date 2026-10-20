@@ -26,6 +26,7 @@ import { NAMES, COSTS, costFormat, money } from "./presentation.mjs";
 import { csvExport } from "./analysis.mjs";
 import {
   coverageSummary,
+  evidenceDepth,
   filterModels,
   nativeCsvExport,
   nativeRanking,
@@ -207,7 +208,7 @@ export function Overview({
       )}
       <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         {label === "综合能力领先"
-          ? "按当前融合积分排序，不要求成本已披露；默认至少两榜准入，票数不足的对决不计入战绩。"
+          ? "按当前 PK 主积分排序，不要求成本已披露；默认至少两榜准入，票数不足的对决不计入战绩。"
           : "在开放权重模型内排序；分数保持全球样本口径。"}{" "}
         并列分数无严格先后。
       </p>
@@ -409,11 +410,58 @@ export function Rankings({
     creator,
     openness,
     scoredOnly,
+    coverageMaskId,
     nativeEstimates,
     nativeHistorical,
     showSuites,
   } = ranking;
   const ranked = useMemo(() => rankedModels(analysis.rows), [analysis.rows]);
+  // 证据深度：融合榜两两证据有多厚。纯展示衍生，随“允许估算”等质量开关实时变化，不参与任何评分。
+  const depth = useMemo(
+    () => evidenceDepth(analysis.rows, models.length),
+    [analysis.rows, models.length],
+  );
+  const coverageCohorts = analysis.coverageCohorts ?? [];
+  const selectedCoverage =
+    (coverageMaskId
+      ? coverageCohorts.find(({ id }) => id === coverageMaskId)
+      : coverageCohorts[0]) ?? null;
+  const coverageSelectionAvailable = coverageCohorts.some(
+    ({ id }) => id === coverageMaskId,
+  );
+  const unavailableCoverageOption =
+    coverageMaskId && !coverageSelectionAvailable
+      ? [
+          {
+            value: coverageMaskId,
+            label: `${coverageMaskId
+              .split("+")
+              .map((source) => (source === "aa" ? "AA" : NAMES[source]))
+              .join(" + ")} · 当前无可比样本`,
+            disabled: true,
+          },
+        ]
+      : [];
+  const coverageRanked = useMemo(
+    () => rankedModels(selectedCoverage?.rows ?? []),
+    [selectedCoverage],
+  );
+  const coverageDiagnosticRows = useMemo(() => {
+    const currentRows = new Map(ranked.map((row) => [row.id, row]));
+    return filterModels(coverageRanked, {
+      query,
+      creator,
+      openness,
+      scoredOnly,
+    }).map((row) => {
+      const current = currentRows.get(row.id);
+      return {
+        ...row,
+        currentRank: current?.rank ?? null,
+        currentComposite: current?.composite ?? null,
+      };
+    });
+  }, [ranked, coverageRanked, query, creator, openness, scoredOnly]);
   const native = useMemo(
     () =>
       view === "fusion"
@@ -457,7 +505,7 @@ export function Rankings({
   const suiteColumns = suiteKeys.map((key) => ({
     title: (
       <Tooltip
-        title={`LiveBench「${SUITES[key] ?? key}」分类原始分（0–100）。仅 LiveBench 提供能力维度；AA、Vals 无对应数据，缺失保持空白。排序只改变显示顺序，不改变综合分与名次。`}
+        title={`LiveBench「${SUITES[key] ?? key}」分类原始分（0–100）。仅 LiveBench 提供能力维度；AA、Vals 无对应数据，缺失保持空白。排序只改变显示顺序，不改变 PK 主积分与名次。`}
       >
         <span className="inline-flex items-baseline gap-[5px]">
           {SUITES[key] ?? key}
@@ -479,6 +527,42 @@ export function Rankings({
       );
     },
   }));
+  const coverageColumns = [
+    {
+      title: "模型",
+      width: 220,
+      render: (_, row) => nameCell(row, onSelect),
+    },
+    {
+      title: "主榜名次",
+      dataIndex: "currentRank",
+      width: 105,
+      render: (rank) => (rank == null ? "未排名" : rank),
+    },
+    {
+      title: "主榜 PK 积分",
+      dataIndex: "currentComposite",
+      width: 120,
+      render: scoreCell,
+    },
+    {
+      title: "对照名次",
+      dataIndex: "rank",
+      width: 130,
+      render: (rank) => (rank == null ? "未排名" : rank),
+    },
+    {
+      title: "对照 PK 积分",
+      dataIndex: "composite",
+      width: 130,
+      render: scoreCell,
+    },
+    {
+      title: "本组对手数",
+      width: 120,
+      render: (_, row) => row.record?.opponents ?? "—",
+    },
+  ];
   const sourceColumns = SOURCE_IDS.map((s) => ({
     title: (
       <Tooltip title="源站原始总分；不同榜单量纲不同，不直接相加">
@@ -530,7 +614,7 @@ export function Rankings({
           },
           { title: "开放状态", width: 130, render: (_, r) => stateTag(r) },
           {
-            title: "多数对决积分",
+            title: "PK 主积分",
             dataIndex: "composite",
             width: 115,
             sorter: (a, b) =>
@@ -542,7 +626,31 @@ export function Rankings({
                 {row.record && value != null && (
                   <small className="block text-[10px] text-[#627987]">
                     {row.record.wins} 胜 / {row.record.draws} 平 /{" "}
-                    {row.record.losses} 负 · {row.record.opponents} 个对手
+                    {row.record.losses} 负 ·{" "}
+                    <Tooltip
+                      title={
+                        <div>
+                          <div>
+                            对局覆盖按双方都存在有效分的评分榜数量统计：
+                          </div>
+                          {[2, 3, 4].map((count) => (
+                            <div key={count}>
+                              双方共有 {count} 个有效评分榜：
+                              {row.record.opponentsBySharedSources?.[count] ??
+                                0}
+                              场
+                            </div>
+                          ))}
+                          <div>
+                            这里只说明对局样本，不改变单场权重或 PK 主积分。
+                          </div>
+                        </div>
+                      }
+                    >
+                      <span className="cursor-help underline decoration-dotted">
+                        {row.record.opponents} 个对手
+                      </span>
+                    </Tooltip>
                   </small>
                 )}
               </div>
@@ -551,8 +659,8 @@ export function Rankings({
           ...[
             {
               title: (
-                <Tooltip title="仅当主积分完全相同时用于排序：已有榜单的排名百分位等权平均，不参与帕累托判断">
-                  同积分辅助分
+                <Tooltip title="各有效评分来源在当前样本内的排名百分位等权平均。它来自与 PK 主积分相同的来源数据，只在 PK 同分时排序；不作为第五票，不与 PK 主积分合并，也不参与帕累托判断。">
+                  榜单位次均值
                 </Tooltip>
               ),
               dataIndex: "auxiliary",
@@ -684,6 +792,36 @@ export function Rankings({
         />
         <SourceQuality compact sources={sources} />
         <QualityNote />
+        {view === "fusion" && (
+          <p className="evidence-depth mt-[10px] mb-0 text-[11px] leading-[1.9] text-[#657d8b]">
+            <span className="font-[650] tracking-[0.1em] text-[#668c86]">
+              证据深度
+            </span>
+            {" · "}
+            {depth.rankedCount === 0 ? (
+              <>当前没有模型进入融合排名（需至少两榜共同有效）。</>
+            ) : (
+              <>
+                <span className="font-semibold text-[#365d58]">
+                  {depth.rankedCount}
+                </span>
+                {` / ${depth.totalModels} 个模型进入融合排名（${Math.round(
+                  depth.rankedShare * 100,
+                )}%）；对决 `}
+                <span className="font-semibold text-[#365d58]">
+                  {Math.round(depth.twoBoardPct)}%
+                </span>
+                {" 仅由 2 榜裁决、"}
+                <span className="font-semibold text-[#365d58]">
+                  {Math.round(depth.richBoardPct)}%
+                </span>
+                {
+                  " 达 3 榜以上。切换「允许估算」会同时改变样本与单场票数；名次请结合战绩与实际对手数阅读。"
+                }
+              </>
+            )}
+          </p>
+        )}
       </section>
       <div
         className={
@@ -739,7 +877,7 @@ export function Rankings({
                   checked={scoredOnly}
                   onChange={(e) => onRanking({ scoredOnly: e.target.checked })}
                 >
-                  仅看有效综合分
+                  仅看有效 PK 主积分
                 </Checkbox>
                 <Checkbox
                   checked={showSuites}
@@ -794,6 +932,72 @@ export function Rankings({
               title="至少两榜参赛；每对共同有效榜单不足两个不比赛。不同模型的实际对手集合可能不同，请结合战绩与对手数阅读。"
             />
           )}
+          {view === "fusion" && (
+            <details className="coverage-cohort-diagnostic mx-[21px] my-[14px] rounded-[10px] border border-[#dce9e5] bg-[#f8fbfa] px-[14px] py-[11px] max-760:mx-[15px]">
+              <summary className="cursor-pointer text-[12px] font-medium leading-[1.8] text-[#365d58]">
+                同一组榜单下重算 · {selectedCoverage?.count ?? 0} 个模型
+              </summary>
+              <div className="pt-[10px]">
+                <div className="mb-[10px] flex flex-wrap items-center gap-[8px]">
+                  <label
+                    htmlFor="coverage-mask-select"
+                    className="text-[11px] text-[#627987]"
+                  >
+                    参与重算的榜单
+                  </label>
+                  <Select
+                    id="coverage-mask-select"
+                    aria-label="同一组榜单对照"
+                    virtual={false}
+                    className="w-full max-w-[420px]"
+                    disabled={coverageCohorts.length === 0}
+                    value={coverageMaskId || selectedCoverage?.id}
+                    onChange={(value) => onRanking({ coverageMaskId: value })}
+                    options={[
+                      ...unavailableCoverageOption,
+                      ...coverageCohorts.map(({ id, sources, count }) => ({
+                        value: id,
+                        label: `${sources
+                          .map((source) =>
+                            source === "aa" ? "AA" : NAMES[source],
+                          )
+                          .join(" + ")} · ${count} 个模型`,
+                      })),
+                    ]}
+                  />
+                </div>
+                <p className="mb-[10px] text-[11px] leading-[1.85] text-[#627987]">
+                  只纳入所选榜单都有有效分的模型，并只用这些榜单在这组模型中重算
+                  PK。榜单和对手范围都可能与主榜不同；本表用于观察比较范围变化时排名是否稳定，不能单独说明某个来源的影响，也不代表能力百分比。主榜不变；搜索和筛选只隐藏行，不参与重算。
+                </p>
+                {!selectedCoverage ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={
+                      coverageMaskId
+                        ? "分享链接指定的榜单组合当前无法比较；请选择当前可用组合"
+                        : "当前没有至少两个模型拥有相同的两榜以上有效数据，无法计算对照"
+                    }
+                  />
+                ) : (
+                  <Table
+                    className="coverage-cohort-table"
+                    rowKey="id"
+                    columns={coverageColumns}
+                    dataSource={coverageDiagnosticRows}
+                    size="small"
+                    scroll={{ x: 825 }}
+                    pagination={{
+                      defaultPageSize: 10,
+                      showSizeChanger: true,
+                      pageSizeOptions: [10, 20, 50],
+                      showTotal: (count) => `${count} 个模型`,
+                    }}
+                  />
+                )}
+              </div>
+            </details>
+          )}
           {view !== "fusion" && (
             <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
               {NAMES[view]}{" "}
@@ -834,7 +1038,7 @@ export function Rankings({
           />
           <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             {view === "fusion"
-              ? "多数对决积分：至少两榜准入，主积分相同才用辅助分排序；对手集合可能不同，请结合实际对手数阅读。辅助分不参与帕累托判断，多数关系可能循环。"
+              ? "PK 主积分 = 100 ×（胜场 + 0.5 × 平场）÷ 实际对手数。榜单位次均值由同一批来源的排名百分位等权平均，只在 PK 同分时用于排序，不再合并进主积分。对手集合可能不同，请结合战绩和对手数阅读；PK 关系可能循环。版本差异可在模型对比中查看共同榜单原始分差。"
               : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
           </p>
         </section>
@@ -900,22 +1104,22 @@ export function Comparison({
   const facts = [
     metric("creator", "厂商", (r) => r.creator),
     metric("openness", "开放状态", stateTag),
-    metric("composite", "多数对决积分", (r) => number(r.composite)),
+    metric("composite", "PK 主积分", (r) => number(r.composite)),
     ...[
-      metric("record", "对决战绩（胜 / 平 / 负）", (r) =>
+      metric("record", "PK 战绩（胜 / 平 / 负）", (r) =>
         r.record && r.composite != null
           ? `${r.record.wins} / ${r.record.draws} / ${r.record.losses}（${r.record.opponents} 个对手）`
           : "未参加正式排名",
       ),
     ],
     ...[
-      metric("auxiliary", "同积分辅助分（仅用于排序）", (r) =>
+      metric("auxiliary", "榜单位次均值（仅 PK 同分排序）", (r) =>
         number(r.auxiliary),
       ),
     ],
     metric(
       "coverage",
-      "有效评分覆盖",
+      "有效榜单覆盖",
       (r) =>
         `${r.available.length}/${analysis.sources.length} 榜${r.complete ? "" : " · 部分覆盖"}`,
     ),
@@ -1053,26 +1257,28 @@ export function Comparison({
             <div className="portal-section-heading">
               <div>
                 <h2 className="mt-[5px] mb-0 flex items-center gap-[8px] text-[17px] font-semibold leading-[1.7] max-760:text-[16px]">
-                  各榜排名分对比
+                  各榜相对位置
                 </h2>
                 <p className="mt-[6px] mb-0 text-[12px] leading-[1.9] text-[#657d8b] max-760:text-[11px]">
-                  0–100
-                  为当前评分样本内的相对位置，越高越靠前。缺分或未启用的榜单不画条形。
+                  0–100 为当前评分样本内的相对位置，越高越靠前。各榜位次均值只在
+                  PK 主积分相同时排序；缺分或未启用的榜单不画条形。
                 </p>
               </div>
               <Tag>同一综合评分样本</Tag>
             </div>
             <CompareChart rows={selected} />
             <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
-              原始分量纲不同，因此图中只比较各榜相对位置；下表完整保留原始分。多数对决主积分使用逐榜胜负；仅在主积分相同时使用这些排名分的等权平均辅助排序；不足当前覆盖门槛的模型不参加正式排名。
+              原始分量纲不同，因此图中只比较各榜相对位置；下表完整保留原始分。PK
+              主积分使用逐榜胜负；各榜位次均值只在 PK
+              同分时辅助排序，两者不再次合并。不足当前覆盖门槛的模型不参加正式排名。
             </p>
           </section>
           {
             <section className="majority-comparison mb-[20px] rounded-[13px] border border-line bg-surface p-[20px] shadow-card">
-              <h2 className="text-[17px]">两两对决与原始分差</h2>
+              <h2 className="text-[17px]">两两 PK 结果与同榜原始分差</h2>
               <p className="text-[11px] leading-[1.9] text-[#627987]">
-                每榜各一票。下表每行以左侧模型为参照，分差只在同一榜内计算，不跨榜相加，也不混入积分。共同有效榜单不足{" "}
-                {analysis.required} 个不判胜负。
+                每榜各一票。下表每行以左侧模型为参照，列出共同有效榜数；分差只在同一榜内计算，不跨榜相加，也不混入
+                PK 主积分。共同有效榜单不足 {analysis.required} 个不判胜负。
               </p>
               <Table
                 rowKey="id"
@@ -1085,6 +1291,12 @@ export function Comparison({
                     title: "对阵（左 / 右）",
                     width: 200,
                     render: (_, r) => `${r.left.name} / ${r.right.name}`,
+                  },
+                  {
+                    title: "共同有效榜",
+                    width: 120,
+                    render: (_, r) =>
+                      `${r.sharedSources}/${analysis.sources.length} 榜 · ${r.complete ? "计入 PK" : "不计 PK"}`,
                   },
                   ...SOURCE_IDS.map((source) => ({
                     title: NAMES[source],
@@ -1104,7 +1316,7 @@ export function Comparison({
                     },
                   })),
                   {
-                    title: "票数与结果",
+                    title: "PK 票数与结果",
                     width: 180,
                     render: (_, r) =>
                       !r.complete

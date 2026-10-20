@@ -14,6 +14,27 @@ function gcd(a, b) {
   while (b) [a, b] = [b, a % b];
   return a;
 }
+function percentileSummary(model, sources, pool) {
+  // 先按有理数精确求和再转数值，避免累加顺序将数学同分拆成不同名次。
+  let numerator = 0n,
+    denominator = 1n;
+  const percentiles = {};
+  for (const source of sources) {
+    const [n, d] = percentileFraction(
+      model.representatives[source].score,
+      pool[source],
+    );
+    percentiles[source] = Number(n) / Number(d);
+    numerator = numerator * d + n * denominator;
+    denominator *= d;
+  }
+  denominator *= BigInt(sources.length);
+  const divisor = gcd(numerator, denominator);
+  return {
+    percentiles,
+    auxiliary: Number(numerator / divisor) / Number(denominator / divisor),
+  };
+}
 export function pareto(rows) {
   return rows.filter(
     (r) =>
@@ -100,8 +121,12 @@ export function combinedCost(
   };
 }
 // 每榜只比较该榜原始分；同榜同分平票，缺失或被排除估算不参与。
-export function majorityMatch(left, right, { includeEstimated = false } = {}) {
-  const ballots = SCORE_SOURCES.map((source) => {
+export function majorityMatch(
+  left,
+  right,
+  { includeEstimated = false, sources = SCORE_SOURCES } = {},
+) {
+  const ballots = sources.map((source) => {
     const a = left.representatives[source],
       b = right.representatives[source];
     const valid =
@@ -127,7 +152,7 @@ export function majorityMatch(left, right, { includeEstimated = false } = {}) {
   };
 }
 
-function majorityRecords(models, includeEstimated) {
+function majorityRecords(models, includeEstimated, sources = SCORE_SOURCES) {
   const records = new Map(
     models.map((m) => [
       m.id,
@@ -136,19 +161,29 @@ function majorityRecords(models, includeEstimated) {
         draws: 0,
         losses: 0,
         opponents: 0,
+        opponentsBySharedSources: Object.fromEntries(
+          Array.from({ length: Math.max(0, sources.length - 1) }, (_, i) => [
+            i + 2,
+            0,
+          ]),
+        ),
       },
     ]),
   );
   for (let i = 0; i < models.length; i++) {
     for (let j = i + 1; j < models.length; j++) {
-      const result = majorityMatch(models[i], models[j], {
+      const match = majorityMatch(models[i], models[j], {
         includeEstimated,
-      }).result;
+        sources,
+      });
+      const { result } = match;
       if (result === null) continue;
       const a = records.get(models[i].id),
         b = records.get(models[j].id);
       a.opponents++;
       b.opponents++;
+      a.opponentsBySharedSources[match.sharedSources]++;
+      b.opponentsBySharedSources[match.sharedSources]++;
       if (result === 0) {
         a.draws++;
         b.draws++;
@@ -205,24 +240,10 @@ export function analyze(
     const record = matches.get(m.id) ?? null;
     const valid = covered && record.opponents > 0;
     let composite = null;
-    const percentiles = {};
+    let percentiles = {};
     let auxiliary = null;
     if (valid) {
-      // 先按有理数精确求和再转数值，避免累加顺序将数学同分拆成不同名次。
-      let numerator = 0n,
-        denominator = 1n;
-      for (const source of available) {
-        const [n, d] = percentileFraction(
-          m.representatives[source].score,
-          pool[source],
-        );
-        percentiles[source] = Number(n) / Number(d);
-        numerator = numerator * d + n * denominator;
-        denominator *= d;
-      }
-      denominator *= BigInt(available.length);
-      const divisor = gcd(numerator, denominator);
-      auxiliary = Number(numerator / divisor) / Number(denominator / divisor);
+      ({ percentiles, auxiliary } = percentileSummary(m, available, pool));
       composite = (100 * (record.wins + 0.5 * record.draws)) / record.opponents;
     }
     const costRecord = m.representatives[costSource];
@@ -258,6 +279,51 @@ export function analyze(
       openFrontier: false,
     };
   });
+  const coverageCohorts = [];
+  for (let mask = 1; mask < 1 << sources.length; mask++) {
+    const selectedSources = sources.filter((_, index) => mask & (1 << index));
+    if (selectedSources.length < required) continue;
+    const cohort = eligible.filter((m) =>
+      selectedSources.every((source) => {
+        const score = m.representatives[source];
+        return (
+          Number.isFinite(score?.score) &&
+          (includeEstimated || !score.estimated)
+        );
+      }),
+    );
+    if (cohort.length < 2) continue;
+    const records = majorityRecords(cohort, includeEstimated, selectedSources);
+    const cohortPool = Object.fromEntries(
+      selectedSources.map((source) => [
+        source,
+        cohort.map((m) => m.representatives[source].score),
+      ]),
+    );
+    const cohortRows = cohort.map((m) => {
+      const record = records.get(m.id);
+      const { auxiliary } = percentileSummary(m, selectedSources, cohortPool);
+      return {
+        id: m.id,
+        name: m.name,
+        creator: m.creator,
+        openWeights: m.openWeights,
+        composite:
+          (100 * (record.wins + 0.5 * record.draws)) / record.opponents,
+        auxiliary,
+        record,
+      };
+    });
+    coverageCohorts.push({
+      id: selectedSources.join("+"),
+      sources: selectedSources,
+      count: cohort.length,
+      rows: cohortRows,
+    });
+  }
+  coverageCohorts.sort(
+    (a, b) => b.sources.length - a.sources.length || b.count - a.count,
+  );
   const plotted = rows.filter((r) => r.plottable);
   const front = new Set(pareto(plotted).map((r) => r.id));
   const openFront = new Set(
@@ -287,6 +353,7 @@ export function analyze(
     required,
     includeEstimated,
     cohort: eligible.length,
+    coverageCohorts,
     plotted: plotted.length,
     costProfile: profile,
   };
@@ -302,7 +369,7 @@ export function csvExport(rows, meta = {}) {
     "厂商",
     "开放权重",
     "覆盖榜数",
-    "综合分",
+    "PK主积分",
     "成本来源数",
     "成本值",
     "成本单位",
@@ -328,7 +395,10 @@ export function csvExport(rows, meta = {}) {
     "平场",
     "负场",
     "对手数",
-    "同积分辅助分",
+    "双方共有2个有效评分榜的对局数",
+    "双方共有3个有效评分榜的对局数",
+    "双方共有4个有效评分榜的对局数",
+    "榜单位次均值（仅PK同分排序）",
   ];
   const scope = typeof meta.scope === "string" ? meta.scope : "";
   const dataTime = isoTime(meta.lastRefresh);
@@ -365,11 +435,14 @@ export function csvExport(rows, meta = {}) {
         r.representatives.arena?.publishedAt,
         dataTime,
         scope,
-        "两榜多数对决（同积分辅助排序）",
+        "四榜多数对决（共同至少两榜，位次均值仅PK同分排序）",
         r.record?.wins,
         r.record?.draws,
         r.record?.losses,
         r.record?.opponents,
+        r.record?.opponentsBySharedSources?.[2],
+        r.record?.opponentsBySharedSources?.[3],
+        r.record?.opponentsBySharedSources?.[4],
         r.auxiliary?.toFixed(4),
       ]),
     ]

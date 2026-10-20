@@ -149,6 +149,7 @@ function App() {
       creator: shared.creator || undefined,
       openness: shared.openness ?? "all",
       scoredOnly: shared.scoredOnly === true,
+      coverageMaskId: shared.coverageMaskId ?? "",
       nativeEstimates: false,
       nativeHistorical: false,
       showSuites: false,
@@ -206,6 +207,7 @@ function App() {
         creator: state.creator || undefined,
         openness: state.openness ?? "all",
         scoredOnly: state.scoredOnly === true,
+        coverageMaskId: state.coverageMaskId ?? "",
         nativeEstimates: previous.nativeEstimates,
         nativeHistorical: previous.nativeHistorical,
         showSuites: previous.showSuites,
@@ -348,7 +350,7 @@ function App() {
   // 导出附带数据时间与评分口径，保证日后可复核同一结论。
   const scopeLabel = useMemo(() => {
     const parts = [
-      "两榜多数对决（四榜各一票，同积分辅助排序）",
+      "四榜多数对决（共同至少两榜，PK 主积分同分按榜单位次均值排序）",
       `至少 ${analysis.required} 榜`,
       estimated ? "允许 AA 估算" : "排除 AA 估算",
     ];
@@ -399,6 +401,8 @@ function App() {
             creator: ranking.creator ?? "",
             openness: ranking.openness,
             scoredOnly: ranking.scoredOnly,
+            coverageMaskId:
+              ranking.coverageMaskId || analysis.coverageCohorts[0]?.id || "",
           }
         : {}),
     });
@@ -423,6 +427,7 @@ function App() {
     budgetLimit,
     selection,
     ranking,
+    analysis,
   ]);
   // 复制时按当前状态即时构造，不依赖去抖后的地址栏，避免复制到上一刻的口径。
   const copyLink = async () => {
@@ -506,7 +511,7 @@ function App() {
         ),
     },
     {
-      title: "多数对决积分",
+      title: "PK 主积分",
       dataIndex: "composite",
       width: 110,
       sorter: (a, b) =>
@@ -618,8 +623,9 @@ function App() {
         <SettingOutlined aria-hidden="true" />
       </div>
       <p className="control-help text-[11px] leading-[1.9] max-760:col-span-full">
-        多数对决：AA、Vals、LiveBench、Arena
-        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。主积分相同才用辅助分排序；实际对手集合可能不同，原始分差不混入积分。
+        PK 多数对决：AA、Vals、LiveBench、Arena
+        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。PK
+        主积分相同才按各榜位次均值排序；两者来自同一批来源，不再合并。实际对手集合可能不同，原始分差不混入积分。
       </p>
       <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-760:my-[6px] max-760:col-span-full" />
       <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
@@ -941,8 +947,8 @@ function App() {
         />
         <div className="scoring-context">
           <span className="flex items-center gap-[8px] flex-wrap">
-            <SettingOutlined aria-hidden="true" /> 多数对决积分 · 四榜各一票 ·
-            至少 {analysis.required} 榜 · {estimated ? "允许估算" : "排除估算"}
+            <SettingOutlined aria-hidden="true" /> PK 主积分 · 四榜各一票 · 至少{" "}
+            {analysis.required} 榜 · {estimated ? "允许估算" : "排除估算"}
             {excludeHistorical ? " · 排除历史" : ""}
             {excludeStale ? " · 排除过期缓存" : ""}
           </span>
@@ -1314,7 +1320,7 @@ function App() {
           />
           {current?.dominatedBy.length > 0 && (
             <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-              当前口径下可同时做到成本不高、综合分不低的前沿模型：
+              当前口径下可同时做到成本不高、PK 主积分不低的前沿模型：
               {current.dominatedBy.join("、")}
             </p>
           )}
@@ -1324,7 +1330,7 @@ function App() {
                 为什么在这个口径下是 / 不是前沿？
               </h3>
               <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
-                当前综合分{" "}
+                当前 PK 主积分{" "}
                 <b className="text-[#416775]">
                   {current.composite?.toFixed(2) ?? "未评分"}
                 </b>
@@ -1333,7 +1339,8 @@ function App() {
                 <b className="text-[#416775]">
                   {costFormat(current.cost, costSource)}
                 </b>
-                。以下保持当前综合分口径，只切换成本来源；比较样本仍按当前覆盖门槛选取。
+                。以下保持 PK
+                主积分不变，只切换成本来源；比较样本仍按当前覆盖门槛选取。
               </p>
               <table className="w-full border-collapse text-[10px] mt-[12px] tabular-nums max-760:text-[9px]">
                 <thead>
@@ -1573,16 +1580,19 @@ function App() {
             采用多数对决，四榜各一票，不提供任意权重推荐。所有页面和分享链接统一使用当前规则。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
-            如何计算综合分？
+            如何计算 PK 主积分？
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             默认至少两榜准入。每对模型共同有效榜单不少于两榜才比赛，每榜一票；领先榜数多者胜，相同则平局，票数不足不计入分母。积分
             = 100 ×（胜场 + 0.5 × 平场）÷ 实际有效对手数，无有效对手不赋分。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            多数意见可能循环，直接交手获胜不保证总积分更高。积分表示对当前样本的对决成绩，不是正确率或能力百分比。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。四榜
-            2∶2
-            时该场判平。最终主积分相同才按已有榜单排名百分位的等权平均辅助分排序；主辅分都相同保持并列。对手集合可能不同，积分可比性弱于完整四榜样本。对比页展示票数、原始分与分差，不直接混分。辅助分不参与帕累托纵轴或支配判断。
+            PK
+            多数关系可能循环，直接交手获胜不保证总积分更高。积分表示对当前样本的对决成绩，不是正确率或能力百分比。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。四榜
+            2∶2 时该场判平。最终 PK
+            主积分相同才按已有榜单排名百分位的等权平均排序；两者来自相同来源数据，位次均值只作同分排序，不作为第五票，也不与
+            PK
+            分再次合并。对手集合可能不同，积分可比性弱于完整四榜样本。对比页展示共同榜数、票数、原始分与分差。位次均值不参与帕累托纵轴或支配判断。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             搜索、厂商、预算只改变显示；成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
@@ -1606,7 +1616,10 @@ function App() {
             GPU、运维和利用率成本。成本缺失、非正或低于显示精度不填零，也不放入对数轴。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            若另一模型成本不高且综合分不低，并至少一项严格更优，则该模型被支配。前沿图中悬浮任一全球前沿模型，即标出它支配的区域：该模型右下方整个矩形内的模型，都被它以更低成本、更高综合分同时支配，标签注明其中模型数；被支配模型的悬浮提示会反向列出支配者。连线只是视觉引导，不代表两个模型之间存在可连续插值的选项。标签重叠时会自动隐藏，可通过悬浮或表格查看。
+            若另一模型成本不高且 PK
+            主积分不低，并至少一项严格更优，则该模型被支配。前沿图中悬浮任一全球前沿模型，即标出它支配的区域：该模型右下方整个矩形内的模型，都被它以更低成本、更高
+            PK
+            主积分同时支配，标签注明其中模型数；被支配模型的悬浮提示会反向列出支配者。连线只是视觉引导，不代表两个模型之间存在可连续插值的选项。标签重叠时会自动隐藏，可通过悬浮或表格查看。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             数据质量与配置差异
@@ -1628,7 +1641,7 @@ function App() {
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">分享与复核</h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            「复制分享链接」把当前估算与质量排除开关、成本口径、预算筛选、排行榜筛选和对比选择写入页面地址；全默认设置也按完整分享恢复，不沿用接收方偏好。CSV
+            「复制分享链接」把当前估算与质量排除开关、成本口径、预算筛选、排行榜筛选、榜单组合对照和对比选择写入页面地址；全默认设置也按完整分享恢复，不沿用接收方偏好。CSV
             导出附带数据时间与完整评分口径，数据本身以快照时间为准。评分固定至少两榜准入；估算或质量排除设置改变样本时会重算排名，不代表模型能力变化。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">

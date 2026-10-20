@@ -18,6 +18,7 @@ test("full share state survives an encode/decode round trip", () => {
     creator: "Anthropic",
     openness: "open",
     scoredOnly: true,
+    coverageMaskId: "aa+vals",
     nativeEstimated: true,
     nativeHistorical: true,
     budgetSource: "aa",
@@ -57,6 +58,24 @@ test("invalid values are dropped instead of breaking the page", () => {
   assert.equal(state.openness, undefined);
   assert.equal(state.weights, undefined);
   assert.deepEqual(state.selection, ["a", "b", "c", "d"]);
+});
+test("only canonical supported source combinations are shareable", () => {
+  assert.equal(encodeShareState({ coverageMaskId: "aa+vals" }), "cm=aa%2Bvals");
+  assert.equal(encodeShareState({ coverageMaskId: "vals+aa" }), "");
+  assert.equal(encodeShareState({ coverageMaskId: "aa+aa" }), "");
+  assert.equal(encodeShareState({ coverageMaskId: "aa+unknown" }), "");
+  assert.equal(
+    decodeShareState("#rankings?cm=aa%2Bvals").state.coverageMaskId,
+    "aa+vals",
+  );
+  assert.equal(
+    decodeShareState("#rankings?cm=vals%2Baa").state.coverageMaskId,
+    undefined,
+  );
+  assert.equal(
+    decodeShareState("#rankings?cm=aa%2Baa").state.coverageMaskId,
+    undefined,
+  );
 });
 test("budget without a usable limit falls back to no budget", () => {
   const parsed = decodeShareState("#rankings?bs=vals");
