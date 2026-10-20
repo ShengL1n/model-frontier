@@ -1,4 +1,5 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { SOURCE_INFO, FETCHERS, ARENA_FORMAT } from "./adapters.mjs";
@@ -13,8 +14,12 @@ let state = {
   sources: {},
   settings: { refreshHours: 6 },
   lastRefresh: null,
+  lastFullRefresh: null,
 };
 let running = null;
+// 不透明版本而非自增计数：进程重启也会换新，旧页面不会把重启后的数据当成同一版本。
+let revision = randomUUID();
+const RETRY_BASE_MS = 15 * 60 * 1000;
 const activeSources = (sources) =>
   Object.fromEntries(
     Object.entries(sources ?? {}).filter(
@@ -35,7 +40,11 @@ export async function loadState() {
       await readFile(join(DATA_DIR, "snapshot.json"), "utf8"),
     );
     if (saved.schemaVersion === 1) {
-      state = { ...saved, sources: activeSources(saved.sources) };
+      state = {
+        ...saved,
+        lastFullRefresh: saved.lastFullRefresh ?? saved.lastRefresh ?? null,
+        sources: activeSources(saved.sources),
+      };
       await persist();
     }
   } catch (e) {
@@ -61,6 +70,7 @@ function persist() {
 export function view() {
   return {
     schemaVersion: 1,
+    revision,
     sources: Object.fromEntries(
       Object.entries(SOURCE_INFO).map(([id, info]) => [
         id,
@@ -68,6 +78,7 @@ export function view() {
           ...info,
           ...state.sources[id],
           rows: undefined,
+          retryDelayMs: undefined,
           count: state.sources[id]?.rows?.length ?? 0,
         },
       ]),
@@ -79,11 +90,13 @@ export function view() {
     progress,
   };
 }
+export const statusView = () => ({ revision, progress });
 export async function setRefreshHours(hours) {
   if (![0, 1, 6, 24].includes(hours))
     throw new Error("刷新间隔必须为 0、1、6 或 24 小时");
   state.settings.refreshHours = hours;
   await persist();
+  revision = randomUUID();
   return state.settings;
 }
 function validScores(rows) {
@@ -115,29 +128,47 @@ async function refreshSource(id, fetcher) {
     };
     progress.sources[id] = "success";
   } catch (e) {
+    const previous = state.sources[id] ?? {};
+    // 失败来源单独退避：15 分钟起步，每次失败翻倍，最长不超过正常刷新周期。
+    const maxDelay = Math.max(
+      RETRY_BASE_MS,
+      (state.settings.refreshHours || 6) * 3600000,
+    );
     state.sources[id] = {
-      ...state.sources[id],
+      ...previous,
       attemptedAt,
       error: e.message,
       stale: true,
+      retryDelayMs: Math.min(
+        previous.retryDelayMs ? previous.retryDelayMs * 2 : RETRY_BASE_MS,
+        maxDelay,
+      ),
     };
     progress.sources[id] = "failed";
   }
 }
-export function refreshAll(fetchers = FETCHERS) {
+function runRefresh(ids, fetchers, full) {
+  if (!Array.isArray(ids) || !ids.length) throw new Error("刷新来源不合法");
+  const targets = [...new Set(ids)];
+  if (
+    targets.length !== ids.length ||
+    targets.some((id) => typeof id !== "string" || !Object.hasOwn(fetchers, id))
+  )
+    throw new Error("刷新来源不合法");
   if (running) return running;
   progress.running = true;
   progress.startedAt = new Date().toISOString();
-  progress.sources = {};
+  progress.sources = Object.fromEntries(targets.map((id) => [id, "loading"]));
   running = (async () => {
     await Promise.allSettled(
-      Object.entries(fetchers).map(([id, fetcher]) =>
-        refreshSource(id, fetcher),
-      ),
+      targets.map((id) => refreshSource(id, fetchers[id])),
     );
-    state.lastRefresh = new Date().toISOString();
+    const finishedAt = new Date().toISOString();
+    state.lastRefresh = finishedAt;
+    if (full) state.lastFullRefresh = finishedAt;
     await persist();
     await history.capture(activeSources(state.sources));
+    revision = randomUUID();
     return view();
   })().finally(() => {
     progress.running = false;
@@ -146,13 +177,30 @@ export function refreshAll(fetchers = FETCHERS) {
   });
   return running;
 }
-export function refreshDue() {
+export function refreshAll(fetchers = FETCHERS) {
+  return runRefresh(Object.keys(fetchers), fetchers, true);
+}
+export function refreshSources(ids, fetchers = FETCHERS) {
+  return runRefresh(ids, fetchers, false);
+}
+export function retryFailed(fetchers = FETCHERS, now = Date.now()) {
+  if (!(state.settings.refreshHours > 0)) return null;
+  const targets = Object.keys(fetchers).filter((id) => {
+    const source = state.sources[id];
+    if (!source?.stale) return false;
+    const attempted = Date.parse(source.attemptedAt ?? "");
+    return (
+      !Number.isFinite(attempted) ||
+      now - attempted >= (source.retryDelayMs ?? RETRY_BASE_MS)
+    );
+  });
+  return targets.length ? runRefresh(targets, fetchers, false) : null;
+}
+export function refreshDue(now = Date.now()) {
   const hours = state.settings.refreshHours;
-  return (
-    hours > 0 &&
-    (!state.lastRefresh ||
-      Date.now() - Date.parse(state.lastRefresh) > hours * 3600000)
-  );
+  if (!(hours > 0)) return false;
+  const last = Date.parse(state.lastFullRefresh ?? "");
+  return !Number.isFinite(last) || now - last > hours * 3600000;
 }
 
 export const historyView = (options) => history.view(options);

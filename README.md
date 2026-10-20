@@ -48,7 +48,7 @@ Arena 文本总榜取自官方 Hugging Face 数据集 `lmarena-ai/leaderboard-da
 
 四站均通过后台 HTTP 读取公开页面、内嵌结构化数据、CSV 与 Parquet。运行和定时刷新不依赖浏览器，不会启动 Chrome；源站拒绝时保留最后成功缓存并显示原因。服务关闭或电脑休眠时不继续刷新，下次运行补更。
 
-数据目录可用 `FRONTIER_DATA_DIR` 覆盖，端口可用 `PORT` 覆盖（双击启动器固定 4317）。
+数据目录可用 `FRONTIER_DATA_DIR` 覆盖，端口可用 `PORT` 覆盖（双击启动器固定 4317）；`FRONTIER_AUTO_REFRESH=0` 关闭自动源站刷新（供离线演示与确定性 E2E）。
 
 `data/snapshot.json` 保存源站原始配置行、成功获取时间、最近尝试时间、错误、发布标签和刷新间隔。单站失败独立回退；少于 5 条的异常响应不替换缓存。手动刷新与自动刷新共享执行锁，同进程内不会重复抓取。
 
@@ -128,4 +128,4 @@ PK 主积分相同才按已有榜单排名百分位（含 Arena）的等权平�
 - `docs/adr/`：架构决策记录（单服务不换栈、分享链接契约、量化口径基准、门禁选型）。
 - `openspec/`：轻量规格约定，沉淀分享链接与融合评分两项核心契约。
 
-质量门禁：ESLint（`--max-warnings 0`）、Stylelint、Prettier、单测覆盖率阈值（行 92% / 分支 85% / 函数 90%）。CI（GitHub Actions）运行静态检查、带阈值的单测、构建、实时数据刷新及三套 Chrome E2E；本地交付也必须跑三套 E2E（`docs/adr/0004`）。
+质量门禁：ESLint（`--max-warnings 0`）、Stylelint、Prettier、单测覆盖率阈值（行 92% / 分支 85% / 函数 90%）。CI（GitHub Actions）运行静态检查、带阈值的单测、构建，并用确定性夹具跑三套 Chrome E2E（不访问源站）；真实源站抓取的健康由独立的每日巡检工作流检查（`docs/adr/0014`）。本地交付也必须跑三套 E2E（`docs/adr/0004`）。

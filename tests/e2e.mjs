@@ -258,7 +258,11 @@ try {
   await page.evaluate(() => localStorage.removeItem("frontier:preferences"));
   await page.reload();
   await page.locator("canvas").waitFor();
-  // A passive API poll must not replace the canvas or reset the user's zoom.
+  let idleDataRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/data") idleDataRequests += 1;
+  });
+  // 空闲轮询只打 /api/status；整包数据按 revision 拉取，不应重建画布或重置缩放。
   const before = await page.locator("canvas").evaluate((e) => {
     e.dataset.qaIdentity = "retained";
     return e.dataset.qaIdentity;
@@ -268,6 +272,7 @@ try {
     await page.locator("canvas").getAttribute("data-qa-identity"),
     before,
   );
+  assert.equal(idleDataRequests, 0, "空闲轮询不应重复拉取整包数据");
   await mkdir("test-artifacts", { recursive: true });
   await page.screenshot({ path: "test-artifacts/desktop.png", fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });
@@ -276,6 +281,18 @@ try {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 812, height: 375 });
   await checkOverflow();
+  // 刷新请求失败时按钮必须复位，不能永久停留在 loading。
+  await page.route("**/api/refresh", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ status: 500, json: { error: "QA failure" } });
+  });
+  await page.getByRole("button", { name: "从源站刷新", exact: true }).click();
+  await page.locator(".refresh-control .anticon-loading").waitFor();
+  await page.getByText("刷新请求失败", { exact: true }).waitFor();
+  await page
+    .locator(".refresh-control .anticon-loading")
+    .waitFor({ state: "hidden" });
+  await page.unroute("**/api/refresh");
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify(
@@ -303,6 +320,7 @@ try {
           "local origin guard",
           "method",
           "passive polling",
+          "failed refresh resets busy",
           "375px",
           "landscape",
           "reduced motion",

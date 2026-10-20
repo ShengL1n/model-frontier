@@ -6,14 +6,18 @@ import {
   loadState,
   view,
   refreshAll,
+  refreshSources,
+  retryFailed,
   progress,
   refreshDue,
   setRefreshHours,
   historyView,
+  statusView,
 } from "./store.mjs";
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PORT = Number(process.env.PORT || 4317);
 const dev = process.argv.includes("--dev");
+const autoRefresh = process.env.FRONTIER_AUTO_REFRESH !== "0";
 await loadState();
 const vite = dev
   ? await (
@@ -31,6 +35,21 @@ const json = (res, code, data) => {
   });
   res.end(JSON.stringify(data));
 };
+async function readJson(req) {
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > 2048) {
+      const error = new Error("请求过大");
+      error.status = 413;
+      throw error;
+    }
+  }
+  const parsed = JSON.parse(body || "{}");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("请求格式不合法");
+  return parsed;
+}
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
@@ -56,22 +75,19 @@ const server = http.createServer(async (req, res) => {
           }),
         );
       if (req.method === "GET" && url.pathname === "/api/status")
-        return json(res, 200, { progress });
+        return json(res, 200, statusView());
       if (req.method === "POST" && url.pathname === "/api/refresh") {
-        refreshAll().catch((e) => console.error(e.message));
-        return json(res, 202, { progress });
+        const body = await readJson(req);
+        const work =
+          body.sources === undefined
+            ? refreshAll()
+            : refreshSources(body.sources);
+        work.catch((e) => console.error(e.message));
+        return json(res, 202, statusView());
       }
       if (req.method === "PUT" && url.pathname === "/api/settings") {
-        let body = "";
-        for await (const chunk of req) {
-          body += chunk;
-          if (body.length > 2048) return json(res, 413, { error: "请求过大" });
-        }
-        return json(
-          res,
-          200,
-          await setRefreshHours(JSON.parse(body).refreshHours),
-        );
+        const body = await readJson(req);
+        return json(res, 200, await setRefreshHours(body.refreshHours));
       }
       return json(res, 404, { error: "接口不存在" });
     }
@@ -104,21 +120,33 @@ const server = http.createServer(async (req, res) => {
     };
     res.writeHead(200, {
       "Content-Type": types[extname(path)] ?? "application/octet-stream",
+      "Cache-Control": path.startsWith(join(dist, "assets") + sep)
+        ? "public, max-age=31536000, immutable"
+        : "no-cache",
     });
     res.end(data);
   } catch (e) {
-    json(res, 400, { error: e.message });
+    json(res, e.status ?? 400, { error: e.message });
   }
 });
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Model Frontier → http://localhost:${PORT}`);
-  if (refreshDue()) refreshAll().catch((e) => console.error(e.message));
+  if (!autoRefresh) {
+    console.log("自动源站刷新已禁用（FRONTIER_AUTO_REFRESH=0）");
+    return;
+  }
+  const task = refreshDue() ? refreshAll() : retryFailed();
+  task?.catch((e) => console.error(e.message));
 });
-const timer = setInterval(() => {
-  if (!progress.running && refreshDue())
-    refreshAll().catch((e) => console.error(e.message));
-}, 60000);
-timer.unref();
+const timer = autoRefresh
+  ? setInterval(() => {
+      if (progress.running) return;
+      if (refreshDue())
+        return refreshAll().catch((e) => console.error(e.message));
+      retryFailed()?.catch((e) => console.error(e.message));
+    }, 60000)
+  : null;
+timer?.unref();
 async function close() {
   clearInterval(timer);
   server.close();

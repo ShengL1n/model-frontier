@@ -19,14 +19,17 @@ const overflow = async () => {
 let previousHours = 1;
 try {
   await mkdir("test-artifacts", { recursive: true });
-  const real = await (await page.request.get(base + "/api/data")).json();
-  assert.ok(real.history.recordCount >= 1);
-  previousHours = real.settings.refreshHours;
+  const before = await (await page.request.get(base + "/api/data")).json();
+  assert.ok(before.history.recordCount >= 1);
+  previousHours = before.settings.refreshHours;
   const applied = await page.request.put(base + "/api/settings", {
     data: { refreshHours: 1 },
   });
   assert.equal(applied.status(), 200);
   assert.equal((await applied.json()).refreshHours, 1);
+  // 设置变更会让服务端 revision 更换；后续注入的模拟数据必须使用同一版本，
+  // 否则客户端会把它当成过期整包反复拉取。
+  const real = await (await page.request.get(base + "/api/data")).json();
   await page.goto(base + "/#overview");
   await page
     .getByRole("heading", { name: "真实变化记录", exact: true })
@@ -137,9 +140,36 @@ try {
     .waitFor({ state: "hidden" });
   await detail.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
+  // 单源重试只提交失败来源，不应触发整包刷新。
+  await page.getByRole("tab", { name: "数据来源与刷新", exact: true }).click();
+  const retryButton = page
+    .locator(".source-card")
+    .filter({ hasText: "LiveBench" })
+    .getByRole("button", { name: "重试此来源", exact: true });
+  await retryButton.waitFor();
+  await page.route("**/api/refresh", (route) =>
+    route.fulfill({
+      status: 202,
+      json: { revision: real.revision },
+    }),
+  );
+  const retryRequest = page.waitForRequest("**/api/refresh");
+  const retryResponse = page.waitForResponse("**/api/refresh");
+  await retryButton.click();
+  assert.deepEqual((await retryRequest).postDataJSON(), {
+    sources: ["livebench"],
+  });
+  await retryResponse;
+  await page.unroute("**/api/refresh");
   await page.setViewportSize({ width: 375, height: 812 });
   await overflow();
-  await page.getByRole("tab", { name: "综合总览", exact: true }).click();
+  // 窄屏下顶部页签会被横向滚出视口，用 hash 导航回总览，避免依赖页签可见性。
+  await page.evaluate(() => {
+    location.hash = "#overview";
+  });
+  await page
+    .getByRole("heading", { name: "从榜单，到你的模型选择", exact: true })
+    .waitFor();
   await page.getByRole("button", { name: "查看更新记录", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -170,6 +200,7 @@ try {
           "history drawer",
           "quality settings persistence",
           "simulated source exclusion",
+          "single-source retry request",
           "source exclusion keeps the only two-source rule",
           "two-source cost baseline",
           "configuration evidence",

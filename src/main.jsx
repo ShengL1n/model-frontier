@@ -64,6 +64,8 @@ import HistoryDrawer from "./HistoryDrawer.jsx";
 import { decodeShareState, shareHash } from "./share.mjs";
 import "./style.css";
 const PAGES = ["overview", "rankings", "compare", "explore", "sources"];
+const STATUS_IDLE_MS = 30000;
+const STATUS_ACTIVE_MS = 2000;
 const pageFromHash = () =>
   PAGES.includes(location.hash.slice(1).split("?")[0])
     ? location.hash.slice(1).split("?")[0]
@@ -119,6 +121,7 @@ function App() {
   const [data, setData] = useState(null),
     [error, setError] = useState(null),
     [busy, setBusy] = useState(false),
+    [progress, setProgress] = useState(null),
     [costSource, setCostSource] = useState(
       shared.costSource ??
         (prefs.costSchemaVersion === 2
@@ -168,6 +171,9 @@ function App() {
         : [];
     });
   const skipHashApply = useRef("");
+  const loadSeq = useRef(0);
+  const loadedRevision = useRef(null);
+  const wakePolling = useRef(() => {});
   const navigate = (key) => {
     const target = "#" + key;
     skipHashApply.current = target;
@@ -242,28 +248,83 @@ function App() {
     navigate("compare");
   };
   const load = useCallback(async () => {
-    const r = await fetch("/api/data");
-    if (!r.ok) throw new Error("无法连接本地服务");
-    const d = await r.json();
-    setData((previous) =>
-      previous?.lastRefresh === d.lastRefresh
-        ? { ...d, models: previous.models }
-        : d,
-    );
-    setBusy(d.progress.running);
-    setError(null);
-    return d;
+    const seq = ++loadSeq.current;
+    try {
+      const r = await fetch("/api/data");
+      if (!r.ok) throw new Error("无法连接本地服务");
+      const d = await r.json();
+      // 只让最后发起的请求写入状态，避免在途旧响应覆盖新 revision 的数据。
+      if (seq !== loadSeq.current) return d;
+      setData((previous) =>
+        previous?.lastRefresh === d.lastRefresh
+          ? { ...d, models: previous.models }
+          : d,
+      );
+      loadedRevision.current = d.revision;
+      setError(null);
+      return d;
+    } catch (e) {
+      if (seq === loadSeq.current) throw e;
+      return null;
+    }
   }, []);
-  useEffect(() => {
-    // 首次拉取与轮询共用 load；内部 setState 均发生在 await 之后
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 标准轮询取数模式
-    load().catch((e) => setError(e.message));
-    const id = setInterval(
-      () => load().catch((e) => setError(e.message)),
-      5000,
-    );
-    return () => clearInterval(id);
+  const loadStatus = useCallback(async () => {
+    const r = await fetch("/api/status");
+    if (!r.ok) throw new Error("无法连接本地服务");
+    const status = await r.json();
+    setBusy(status.progress.running);
+    setProgress(status.progress);
+    if (loadedRevision.current !== status.revision) await load();
+    return status;
   }, [load]);
+  useEffect(() => {
+    // 状态轮询只传几十字节；整包数据仅在 revision 变化（抓取、设置变更）时拉取。
+    let stopped = false;
+    let timer;
+    let inFlight = false;
+    let wakeQueued = false;
+    let statusFailed = false;
+    const tick = async () => {
+      if (stopped) return;
+      // 唤醒可能发生在状态请求在途时；排队等本轮结束，避免旧响应覆盖新状态并拖慢轮询。
+      if (inFlight) {
+        wakeQueued = true;
+        return;
+      }
+      inFlight = true;
+      let running = false;
+      try {
+        const status = await loadStatus();
+        if (statusFailed) setError(null);
+        statusFailed = false;
+        running = status.progress.running;
+      } catch (e) {
+        statusFailed = true;
+        if (!stopped) setError(e.message);
+      } finally {
+        inFlight = false;
+      }
+      if (stopped) return;
+      if (wakeQueued) {
+        wakeQueued = false;
+        clearTimeout(timer);
+        tick();
+        return;
+      }
+      timer = setTimeout(tick, running ? STATUS_ACTIVE_MS : STATUS_IDLE_MS);
+    };
+    wakePolling.current = () => {
+      if (stopped) return;
+      clearTimeout(timer);
+      tick();
+    };
+    tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      wakePolling.current = () => {};
+    };
+  }, [loadStatus]);
   useEffect(() => {
     localStorage.setItem(
       "frontier:preferences",
@@ -444,10 +505,27 @@ function App() {
     try {
       const r = await fetch("/api/refresh", { method: "POST" });
       if (!r.ok) throw new Error("刷新请求失败");
-      await load();
     } catch (e) {
       setError(e.message);
       setBusy(false);
+    } finally {
+      wakePolling.current();
+    }
+  };
+  const retrySource = async (id) => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sources: [id] }),
+      });
+      if (!r.ok) throw new Error("重试请求失败");
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    } finally {
+      wakePolling.current();
     }
   };
   const changeInterval = async (refreshHours) => {
@@ -1155,7 +1233,7 @@ function App() {
                     <Tag
                       color={s.stale ? "orange" : s.count ? "green" : "default"}
                     >
-                      {data?.progress.sources[id] === "loading"
+                      {(progress ?? data?.progress)?.sources?.[id] === "loading"
                         ? "正在抓取"
                         : s.stale
                           ? "历史缓存"
@@ -1186,7 +1264,22 @@ function App() {
                       {formatTime(s.attemptedAt)}
                     </dd>
                   </dl>
-                  {s.error && <Alert type="warning" title={s.error} />}
+                  {s.error && (
+                    <Alert
+                      type="warning"
+                      title={s.error}
+                      action={
+                        <Button
+                          size="small"
+                          disabled={busy}
+                          loading={progress?.sources?.[id] === "loading"}
+                          onClick={() => retrySource(id)}
+                        >
+                          重试此来源
+                        </Button>
+                      }
+                    />
+                  )}
                   <ul className="text-[11px] leading-[1.9] pl-[16px] text-[#93a2ab]">
                     {s.notes?.map((n, i) => (
                       <li key={i}>{n}</li>

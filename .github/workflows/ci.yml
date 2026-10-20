@@ -33,13 +33,17 @@ jobs:
       - run: npm run format:check
       - run: npm run test:coverage
       - run: npm run build
-      # 数据文件已退出版本控制（ADR-0007）：E2E 跑在真实数据上，先显式刷新落盘；
-      # 任一站失败即步骤失败并明确报错，不再有「读仓库快照」的隐式基准
-      - name: 刷新榜单数据
-        run: npm run refresh
+      # E2E 使用仓库内确定性夹具，PR 门禁不访问任何源站（ADR-0014）；
+      # 真实抓取的可用性与适配器漂移由独立的 source-health 工作流巡检。
+      # 夹具内容的缓存时间按运行时刻刷新，数据行保持固定。
+      - name: 准备确定性 E2E 数据
+        run: node tests/prepare-fixture.mjs "$RUNNER_TEMP/frontier-data"
       # 三套 E2E 是行为门禁（图表交互、门户六页、证据与历史流），必须在构建产物上跑：
       # 测试以 channel: "chrome" 启动真实 Chrome，并请求运行中的生产服务
       - name: 启动生产服务
+        env:
+          FRONTIER_DATA_DIR: ${{ runner.temp }}/frontier-data
+          FRONTIER_AUTO_REFRESH: "0"
         run: |
           npm start &
           n=0

@@ -1,8 +1,42 @@
 # Handoff
 
-最后更新：2026-10-20。**排行榜展示三组变更（PK 主积分表述澄清、证据深度摘要、固定来源组合对照）已完成开发与全量验证；提交、推送与 CI 终态以版本库和 GitHub Actions 为准。** 以下“当前状态”优先于后面的历史记录。
+最后更新：2026-10-20。**最新一轮：CI 与源站解耦（确定性夹具 + 独立巡检）、状态轮询收敛、失败来源单源退避重试，已完成开发、评审与全量验证；提交、推送与 CI 终态以版本库和 GitHub Actions 为准。** 以下“最新一轮”优先于后面的历史记录。
 
-## 当前状态：本轮交付（已交付）
+## 最新一轮：CI 解耦、轮询收敛与单源重试（2026-10-20，已交付）
+
+### 决策与变更
+
+- CI 不再执行 `npm run refresh`。E2E 使用 `tests/fixtures/snapshot.json`，由 `tests/prepare-fixture.mjs` 把缓存时间刷新到运行时刻并写入临时 `FRONTIER_DATA_DIR`，服务以 `FRONTIER_AUTO_REFRESH=0` 启动；PR 门禁不发出源站请求（ADR-0014）。
+- 新增 `.github/workflows/source-health.yml`：每日 02:23 UTC + 手动触发，执行 `npm run refresh`，失败只标记巡检工作流，不阻塞代码门禁。
+- 页面轮询从每 5 秒拉约 932 KB 的 `/api/data` 改为：空闲 30 秒打 `/api/status`（约 0.2 KB），仅当 `revision` 变化时拉整包；刷新进行中 2 秒轮询状态。`/api/data` 与 `/api/status` 均带 `revision`。
+- 失败来源独立重试：15 分钟起步、逐次翻倍、上限为正常刷新周期；只重试 `stale` 来源，不推动 `lastFullRefresh`（全量周期时钟）。来源卡片的失败提示旁新增「重试此来源」，POST `/api/refresh` 支持 `{sources:[id]}`，非法来源返回 400。
+- 生产静态资源：`/assets/*` 一年 immutable 缓存（文件名带内容 hash），`index.html` 等 no-cache。
+- ADR-0014 新增；ADR-0004 / 0007 标注 CI 范围被取代；ROADMAP 的「E2E 进 CI」从待办移到已交付。
+- 评审修复：`revision` 改为进程内 UUID（服务重启也会换新）；状态轮询串行化、整包加载改为最后发起的请求生效；手动刷新/单源重试失败复位 `busy`，状态轮询不再无条件清除用户操作错误；`prepare-fixture` 拒绝写入运行时 `data/`。
+- 归档：本轮未改动 `ranking` / `share-link` 规格，`openspec` 无变更提案；架构决策归档于 ADR-0014，本文件记录运行假设与坑位。
+
+### 给下一棒的坑
+
+- `lastRefresh` 是「最后尝试」时间（含单源重试），`lastFullRefresh` 才是全量刷新调度时钟；不要把两者合并。
+- `retryDelayMs` 只存在缓存里，`view()` 会剥掉；不要把它当页面字段。
+- 客户端只有 `loadedRevision !== status.revision` 才拉 `/api/data`；任何改变数据或设置的服务端路径都必须更换 `revision`，否则页面不会更新（进度由 `/api/status` 实时返回，不依赖 revision）。`revision` 是进程内 opaque token（重启即换新），不是可比较大小的版本号，页面只做相等判断。
+- 状态轮询在请求在途时排队，不要并发发起；整包加载以最后发起的请求为准，旧响应不得写入状态。否则旧状态会覆盖新状态，或轮询被拖慢。
+- 状态轮询成功不能无条件 `setError(null)`：只在轮询自身从失败恢复时清错；用户操作错误由成功的整包加载或用户关闭来清除。
+- 手动刷新 / 单源重试请求失败时必须复位 `busy`；不要只依赖下一次状态轮询。
+- `prepare-fixture.mjs` 会删除目标目录的 `history.json`，已显式拒绝仓库 `data/`；不要移除该保护。
+- E2E 夹具数据固定、缓存时间运行时刷新。页面断言若依赖新数据，先成功刷新一次，再用 `data/snapshot.json` 覆盖 `tests/fixtures/snapshot.json`。
+- `FRONTIER_AUTO_REFRESH=0` 只关闭自动抓取，手动 `/api/refresh` 仍可用。
+- 窄屏下顶部页签会被横向滚出视口；E2E 从来源页回到总览时用 hash 导航，不要依赖页签点击。
+
+### 验证证据（2026-10-20 本机）
+
+- 单测 120/120；覆盖率行 98.60 / 分支 92.63 / 函数 96.24（门禁 92 / 85 / 90）；ESLint、Stylelint、Prettier、build 全绿。
+- 4317 生产服务按最终构建重启；三套 E2E 全绿（真实数据），含新增的「失败刷新复位」断言。
+- 夹具服务（4318，`FRONTIER_AUTO_REFRESH=0`）三套 E2E 全绿，含单源重试请求与 375px 来源页；`lastRefresh` 与历史记录数保持不变，确认未抓取源站。
+- `curl` 验证：`/api/status` 与 `/api/data` 的 revision 一致（UUID）；非法与重复来源 400；`/assets/*` immutable、`/` no-cache。
+- 审查循环：5 个问题（revision 重启失效、轮询/加载竞态、失败态 busy 卡死、错误被立即清除、夹具误写风险）全部修复并复验，无剩余缺陷。
+
+## 上一轮交付：排行榜展示与抓取重试加固（2026-10-20，历史）
 
 ### 规则与决策
 
@@ -13,13 +47,13 @@
 - 主榜计票、成本口径、前沿判定均不变；三组都属展示与对照层。
 - **源站抓取重试加固**（同批一并交付）：`requestSource` 超时提高到 45 秒，超时 / 网络错误 / 408 / 425 / 429 / 5xx 自动重试一次，响应体读取纳入重试范围；LiveBench 候选文件 404 仍按「换下一布局」处理，仅可重试错误才向上抛失败整站；`fetchArena` 保留重试。
 
-### 验证证据（2026-10-20 本机）
+### 上一轮验证证据（2026-10-20 本机）
 
 - 单测 118/118；覆盖率行 98.39 / 分支 92.58 / 函数 96.14（门禁 92 / 85 / 90）；ESLint、Stylelint、Prettier、build 全绿。
 - 4317 生产服务按最终构建重启；真实刷新四源全部成功（arena 416 / aa 706 / vals 50 / livebench 48）。
 - 三套 E2E 全绿（`test:e2e` / `test:portal` / `test:evidence`），pageErrors / errors 均空。
 
-### 给下一棒的坑（本轮新增）
+### 给下一棒的坑（上一轮新增）
 
 - **hyparquet 的 `parquetReadObjects` 只收真 ArrayBuffer**：`getBuffer` 返回 Node Buffer，喂给 Arena Parquet 解析会抛 "First argument to DataView constructor must be an ArrayBuffer"；`crypto.subtle` 路径（AA 加密数据）可以吃 Buffer——两条路径别混用返回类型，`fetchArena` 必须经 `response.arrayBuffer()`。
 
