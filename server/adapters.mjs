@@ -33,26 +33,59 @@ const number = (s) => {
 };
 const prices = (s) =>
   [...String(s).matchAll(/\$([\d.]+)/g)].map((m) => Number(m[1]));
-// 多站抓取共用：超时、明确的身份声明、HTTP 状态检查。getText / getBuffer 原本各写一份
-// fetch，只差 Accept，收敛到一处，少一处会漂移的重复。
-async function requestSource(url, timeout = 30000, accept = "*/*") {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(timeout),
-    headers: {
-      "User-Agent": "ModelFrontier/1.0 (personal local leaderboard reader)",
-      Accept: accept,
-    },
-  });
-  if (!response.ok) throw new Error(`源站返回 HTTP ${response.status}`);
-  return response;
+// 每次 HTTP 请求最多 45 秒；超时、网络错误和临时服务端错误只重试一次。
+// 把响应体读取放在重试范围内，避免只拿到响应头后下载卡住却无法重试。
+const SOURCE_TIMEOUT = 45000;
+const SOURCE_RETRY_DELAY = 1000;
+function isRetryableSourceError(error) {
+  return (
+    error instanceof TypeError ||
+    error?.name === "AbortError" ||
+    error?.name === "TimeoutError" ||
+    error?.status === 408 ||
+    error?.status === 425 ||
+    error?.status === 429 ||
+    error?.status >= 500
+  );
 }
-export async function getText(url, timeout = 30000) {
-  const response = await requestSource(
+async function requestSource(
+  url,
+  timeout = SOURCE_TIMEOUT,
+  accept = "*/*",
+  readBody,
+  retry = true,
+) {
+  const attempts = retry ? 2 : 1;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(timeout),
+        headers: {
+          "User-Agent": "ModelFrontier/1.0 (personal local leaderboard reader)",
+          Accept: accept,
+        },
+      });
+      if (!response.ok) {
+        const error = new Error(`源站返回 HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return await readBody(response);
+    } catch (error) {
+      if (attempt + 1 >= attempts || !isRetryableSourceError(error))
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, SOURCE_RETRY_DELAY));
+    }
+  }
+}
+export async function getText(url, timeout = SOURCE_TIMEOUT, retry = true) {
+  return requestSource(
     url,
     timeout,
     "text/html,application/json,text/csv,*/*",
+    (response) => response.text(),
+    retry,
   );
-  return response.text();
 }
 // AA 的全量模型不再随页面下发，改为放在 manifest 指向的加密文件里：AES-256-GCM 加密后
 // gzip 的 JSON。密钥写在同一个 Flight 分片中，IV 取 SHA-256(key) 前 12 字节，认证标签 128 位。
@@ -334,14 +367,22 @@ export async function fetchLivebench() {
       const csv = await getText(
         new URL(tablePath, SOURCE_INFO.livebench.url),
         LB_FILE_TIMEOUT,
-      ).catch(() => null);
+        false,
+      ).catch((error) => {
+        if (isRetryableSourceError(error)) throw error;
+        return null;
+      });
       // 站点对未命中路径返回 SPA 壳（HTTP 200 + HTML），表头是唯一的拦网；
       // cost 同理，拿到 HTML 壳按缺失处理，不把解析垃圾当成本。
       if (!csv || !csv.startsWith("model,")) continue;
       const cost = await getText(
         new URL(costPath, SOURCE_INFO.livebench.url),
         LB_FILE_TIMEOUT,
-      ).catch(() => null);
+        false,
+      ).catch((error) => {
+        if (isRetryableSourceError(error)) throw error;
+        return null;
+      });
       return {
         ...parseLivebench(csv, cost?.startsWith("model,") ? cost : null, js),
         sourceDate: labels[id] ?? lbDashed(id),
@@ -351,9 +392,10 @@ export async function fetchLivebench() {
   }
   throw new Error("LiveBench 发布文件未找到；保留上次数据");
 }
-async function getBuffer(url, timeout = 30000) {
-  const response = await requestSource(url, timeout);
-  return Buffer.from(await response.arrayBuffer());
+async function getBuffer(url, timeout = SOURCE_TIMEOUT) {
+  return requestSource(url, timeout, "*/*", async (response) =>
+    Buffer.from(await response.arrayBuffer()),
+  );
 }
 async function fetchAA() {
   const html = await getText(SOURCE_INFO.aa.url);
@@ -462,8 +504,14 @@ export function parseArena(data) {
   };
 }
 export async function fetchArena() {
-  const response = await requestSource(ARENA_DATA_URL);
-  const file = await response.arrayBuffer();
+  // hyparquet 内部对 file 做 new DataView()，必须传真 ArrayBuffer；getBuffer 返回的
+  // Node Buffer 会抛 "First argument to DataView constructor must be an ArrayBuffer"。
+  const file = await requestSource(
+    ARENA_DATA_URL,
+    SOURCE_TIMEOUT,
+    "*/*",
+    (response) => response.arrayBuffer(),
+  );
   return parseArena(await parquetReadObjects({ file }));
 }
 
