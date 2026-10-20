@@ -58,6 +58,8 @@ export default function Chart({
   chartRef,
   costSource,
   costProfile,
+  highlightIds,
+  searchActive,
 }) {
   const element = useRef(),
     container = useRef(),
@@ -73,6 +75,7 @@ export default function Chart({
   const [expanded, setExpanded] = useState(false),
     [visibility, setVisibility] = useState({}),
     [zoomed, setZoomed] = useState(false);
+  const plotCount = rows.filter((r) => r.plottable).length;
   useEffect(() => {
     const node = element.current;
     const chart = echarts.init(node);
@@ -128,7 +131,7 @@ export default function Chart({
                   },
                   data: [
                     [
-                      { xAxis: row.cost, yAxis: 0 },
+                      { xAxis: row.cost, yAxis: context.yMin ?? 0 },
                       { xAxis: context.axisMax, yAxis: row.composite },
                     ],
                   ],
@@ -178,7 +181,23 @@ export default function Chart({
     const axisMax = plot.length
       ? Math.max(...plot.map((r) => r.cost)) * 1.4
       : 100;
-    zoneContext.current = { plot, axisMax, openOnly: focus === "openOnly" };
+    // Elo 等级分围绕 1000 分布；纵轴按当前样本自适应，保留 50 分刻度对齐。
+    const scores = plot.map((r) => r.composite).filter(Number.isFinite);
+    const scoreMin = scores.length ? Math.min(...scores) : 1000;
+    const scoreMax = scores.length ? Math.max(...scores) : 1000;
+    const scorePadding = Math.max(25, (scoreMax - scoreMin) * 0.08);
+    const yMin = Math.floor((scoreMin - scorePadding) / 50) * 50;
+    const yMax = Math.max(
+      yMin + 100,
+      Math.ceil((scoreMax + scorePadding) / 50) * 50,
+    );
+    const yInterval = Math.max(50, Math.ceil((yMax - yMin) / 8 / 50) * 50);
+    zoneContext.current = {
+      plot,
+      axisMax,
+      yMin,
+      openOnly: focus === "openOnly",
+    };
     paintedZone.current = null;
     const point = (r) => ({
       id: r.id,
@@ -208,6 +227,39 @@ export default function Chart({
     });
     const open = plot.filter((r) => r.openWeights === true),
       closed = plot.filter((r) => r.openWeights !== true);
+    // 搜索命中点单独一层描边，保证在全部点位上可见；关闭对应图例时一并隐藏。
+    const highlighted = searchActive
+      ? plot.filter(
+          (r) =>
+            highlightIds?.has(r.id) &&
+            visibility[
+              r.openWeights === true ? "开放权重" : "闭源 / 未确认"
+            ] !== false,
+        )
+      : [];
+    const highlight = highlighted.map((r) => {
+      const base = point(r);
+      return {
+        ...base,
+        symbolSize: 21,
+        itemStyle: {
+          color: "transparent",
+          borderColor: "#d98a2b",
+          borderWidth: 3,
+          shadowBlur: 6,
+          shadowColor: "rgba(217,138,43,.35)",
+        },
+        label: {
+          ...base.label,
+          show: !(r.frontier || r.openFrontier),
+          color: "#8a4b00",
+          backgroundColor: "#fff8ec",
+          borderColor: "#e9b56a",
+          borderWidth: 1,
+          fontWeight: 650,
+        },
+      };
+    });
     const line = (name, filter, color, dashed, id) => ({
       id,
       name,
@@ -239,8 +291,9 @@ export default function Chart({
         },
         aria: {
           enabled: true,
-          description:
-            "模型成本与综合能力散点图，左上方代表更低成本与更高能力。悬浮全球前沿模型可标出它支配的区域；下方表格提供相同数据。",
+          description: searchActive
+            ? `模型成本与 PK 主积分散点图，搜索命中 ${highlightIds?.size ?? 0} 个模型，图中 ${highlight.length} 个点位已用橙色描边标注；全部 ${plot.length} 个点位保留。悬浮全球前沿模型可标出它支配的区域。`
+            : "模型成本与 PK 主积分散点图，左上方代表更低成本与更高 BT 强度。悬浮全球前沿模型可标出它支配的区域；下方表格提供相同数据。",
         },
         grid: { left: 55, right: 35, top: 44, bottom: 78 },
         tooltip: {
@@ -265,7 +318,7 @@ export default function Chart({
             const dominated = r.dominatedBy?.length
               ? `<div class="mx-[18px] border-t border-t-[#edf1f4] px-[18px] py-[10px] text-[10px] leading-[1.7] text-[#a9635a]">被 ${esc(r.dominatedBy.slice(0, 2).join("、"))}${r.dominatedBy.length > 2 ? ` 等 ${r.dominatedBy.length} 个前沿模型` : ""}同时以更低成本、更高 PK 主积分支配</div>`
               : "";
-            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-760:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">PK 主积分</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> / 100</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div>${dominated}<div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>有效评分 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
+            return `<div class="border-b border-b-[#edf1f4] pt-[17px] px-[18px] pb-[13px]"><div class="mb-[6px] text-[10px] text-[#178571]">${r.openWeights === true ? "开放权重" : "闭源 / 开放状态未确认"}</div><strong class="block text-[14px] font-semibold text-[#274354]">${esc(r.name)}</strong><span class="mt-[5px] block text-[10px] text-[#91a1ac]">${esc(r.creator)}</span></div><div class="grid grid-cols-[1fr_1fr] gap-[25px] p-[15px_18px] max-760:gap-[18px]"><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">PK 主积分（Elo）</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${r.composite.toFixed(1)}<em class="text-[10px] font-normal not-italic text-[#9babb4]"> · 中位 1000</em></b></div><div><small class="mb-[6px] block text-[10px] text-[#8c9ca6]">${isRelative ? "相对基准成本" : "每次任务成本"}</small><b class="text-[19px] font-semibold tabular-nums text-[#244755] max-760:text-[17px]">${costFormat(r.cost, costSource)}</b></div></div><div class="mx-[18px] border-t border-t-[#edf1f4] py-[11px]"><div class="mb-[8px] text-[9px] text-[#9aabb5]">三站真实任务成本 · USD</div>${dollars}</div>${dominated}<div class="flex flex-wrap justify-between gap-[9px] bg-[#f7faf9] px-[18px] py-[11px] text-[9px] text-[#8a9e96]"><span>有效评分 ${r.available.length} 榜 · 成本 ${r.costCoverage}/3 来源</span><strong class="font-medium text-[#21816a]">${r.frontier ? "全球前沿" : r.openFrontier ? "开放权重前沿" : "非前沿"}</strong><small class="block w-full text-[9px] text-[#a2b0a9]">点击模型查看配置与原始数据</small></div>`;
           },
         },
         legend: {
@@ -297,15 +350,15 @@ export default function Chart({
         },
         yAxis: {
           type: "value",
-          min: 0,
-          max: 100,
-          name: "PK 主积分",
+          min: yMin,
+          max: yMax,
+          name: "PK 主积分（Elo）",
           nameTextStyle: {
             color: "#657b8b",
             fontSize: 11,
             padding: [0, 0, 7, 0],
           },
-          interval: 20,
+          interval: yInterval,
           axisLabel: { color: "#81929f", fontSize: 10 },
           splitLine: { lineStyle: { color: "#edf1f5" } },
           axisLine: { show: false },
@@ -389,11 +442,34 @@ export default function Chart({
             emphasis: { scale: 1.5, itemStyle: { color: "#065f50" } },
             z: 4,
           },
+          {
+            name: "搜索命中",
+            type: "scatter",
+            data: highlight,
+            symbolSize: 21,
+            itemStyle: {
+              color: "transparent",
+              borderColor: "#d98a2b",
+              borderWidth: 3,
+            },
+            labelLayout: { hideOverlap: true, moveOverlap: "shiftY" },
+            silent: true,
+            z: 10,
+            tooltip: { show: false },
+          },
         ],
       },
       true,
     );
-  }, [rows, focus, chartRef, costSource, visibility]);
+  }, [
+    rows,
+    focus,
+    chartRef,
+    costSource,
+    visibility,
+    highlightIds,
+    searchActive,
+  ]);
   const reset = () =>
     chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
   const zoom = (direction) => {
@@ -427,7 +503,7 @@ export default function Chart({
     else await container.current?.requestFullscreen?.();
   };
   return (
-    <div ref={container} className="chart-stage">
+    <div ref={container} className="chart-stage" data-chart-points={plotCount}>
       <div className="flex items-center justify-between gap-[12px] pt-[8px] pb-[5px] max-1180:flex-wrap max-1180:gap-[5px] max-760:gap-[8px] max-760:px-[3px] max-760:pt-[9px]">
         <div className="chart-legend">
           {LEGEND.filter(([, kind]) =>
@@ -506,7 +582,7 @@ export default function Chart({
           ref={element}
           className="chart h-[448px] w-full overflow-hidden min-[1600px]:h-[490px] max-1180:h-[465px] max-760:h-[420px] [.chart-stage:fullscreen_&]:h-full [.chart-stage:fullscreen_&]:min-h-0"
           role="img"
-          aria-label="综合能力与任务成本交互图"
+          aria-label="PK 主积分与任务成本交互图"
         />
       </div>
       {costSource === "composite" && (

@@ -471,12 +471,27 @@ try {
   assert.ok(majorityCsv.includes("四榜多数对决"));
   assert.ok(
     majorityCsv.includes(
-      "四榜多数对决（共同至少两榜，PK 主积分同分按榜单位次均值排序）",
+      "四榜多数对决 Bradley-Terry（共同至少两榜，位次均值仅同分排序）",
     ),
   );
-  assert.ok(majorityCsv.includes("位次均值仅PK同分排序"));
+  assert.ok(majorityCsv.includes("位次均值仅同分排序"));
+  assert.ok(majorityCsv.includes("BT强度θ"));
+  assert.ok(majorityCsv.includes("现行综合分（Copeland）"));
+  assert.ok(majorityCsv.includes("名次差"));
   assert.ok(majorityCsv.includes("双方共有2个有效评分榜的对局数"));
   await tab("模型对比");
+  await page.locator(".method-comparison").waitFor();
+  await page
+    .locator(".method-comparison")
+    .getByRole("columnheader", { name: "BT 名次", exact: true })
+    .waitFor();
+  await page
+    .locator(".method-comparison")
+    .getByRole("columnheader", {
+      name: "现行 Copeland 胜率",
+      exact: true,
+    })
+    .waitFor();
   // 全默认分享也必须覆盖接收方不同的本机偏好。
   const receiver = await browser.newPage();
   try {

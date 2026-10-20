@@ -179,7 +179,27 @@ try {
   await legend.click();
   assert.equal(await legend.getAttribute("aria-pressed"), "false");
   await legend.click();
+  const chartStage = page.locator(".chart-stage");
+  const plottedBefore = await chartStage.getAttribute("data-chart-points");
   await page.getByLabel("搜索模型", { exact: true }).fill("MiMo");
+  await page.locator(".search-hint").waitFor();
+  assert.match(
+    await page.locator(".search-hint").innerText(),
+    /搜索命中 \d+ 个模型/,
+  );
+  assert.equal(
+    await chartStage.getAttribute("data-chart-points"),
+    plottedBefore,
+    "搜索不应从图表移除点位",
+  );
+  await mkdir("test-artifacts", { recursive: true });
+  await page.screenshot({
+    path: "test-artifacts/search-highlight.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await checkOverflow();
+  await page.setViewportSize({ width: 1440, height: 1080 });
   await page.getByRole("button", { name: /MiMo V2.6 Pro/ }).click();
   await page
     .getByText(
@@ -203,6 +223,12 @@ try {
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await page.getByLabel("搜索模型", { exact: true }).fill("");
+  await page.locator(".search-hint").waitFor({ state: "hidden" });
+  assert.equal(
+    await chartStage.getAttribute("data-chart-points"),
+    plottedBefore,
+    "清空搜索后图表点位数保持不变",
+  );
   await page
     .locator(".scoring-context")
     .getByText(/至少 2 榜/)
@@ -319,6 +345,8 @@ try {
           "settings validation",
           "local origin guard",
           "method",
+          "search highlights chart",
+          "search 375px",
           "passive polling",
           "failed refresh resets busy",
           "375px",

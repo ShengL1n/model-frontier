@@ -51,7 +51,12 @@ import {
 } from "./presentation.mjs";
 import { analyze, csvExport, sourceAudit } from "./analysis.mjs";
 import { Overview, Rankings, Comparison, CreatorChips } from "./Portal.jsx";
-import { applyBudget, sanitizeSelection, vendorChipCounts } from "./portal.mjs";
+import {
+  applyBudget,
+  compareNullableScores,
+  sanitizeSelection,
+  vendorChipCounts,
+} from "./portal.mjs";
 import { applyEvidencePolicy, sourceHealth } from "./evidence.mjs";
 import {
   ArenaEvidence,
@@ -77,6 +82,10 @@ const stored = (key = "frontier:preferences") => {
     return {};
   }
 };
+const matchesSearch = (row, query) =>
+  !query ||
+  `${row.name} ${row.creator}`.toLowerCase().includes(query.toLowerCase());
+const compareComposite = compareNullableScores((r) => r.composite);
 function download(content, type, name) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement("a");
@@ -379,17 +388,13 @@ function App() {
       }),
     [evaluationModels, costSource, estimated, activeCostSources],
   );
-  const rows = useMemo(
+  const chartRows = useMemo(
     () =>
       applyBudget(analysis.rows, { budgetSource, budgetLimit })
         .filter(
           (r) =>
             (focus !== "openOnly" || r.openWeights === true) &&
             (!creator || r.creator === creator) &&
-            (!query ||
-              `${r.name} ${r.creator}`
-                .toLowerCase()
-                .includes(query.toLowerCase())) &&
             (!onlyFront || r.frontier || r.openFrontier),
         )
         .sort(
@@ -397,11 +402,26 @@ function App() {
             (focus === "openFirst"
               ? Number(b.openWeights === true) - Number(a.openWeights === true)
               : 0) ||
-            (b.composite ?? -1) - (a.composite ?? -1) ||
+            (b.composite ?? -Infinity) - (a.composite ?? -Infinity) ||
             (b.auxiliary ?? -1) - (a.auxiliary ?? -1) ||
             b.coverage - a.coverage,
         ),
-    [analysis, focus, creator, query, onlyFront, budgetSource, budgetLimit],
+    [analysis, focus, creator, onlyFront, budgetSource, budgetLimit],
+  );
+  // 搜索只过滤下方模型表；图表保留全部点位，命中模型单独标注。
+  const rows = useMemo(
+    () =>
+      query ? chartRows.filter((r) => matchesSearch(r, query)) : chartRows,
+    [chartRows, query],
+  );
+  const searchActive = query.length > 0;
+  const highlightIds = useMemo(
+    () => (searchActive ? new Set(rows.map((r) => r.id)) : null),
+    [rows, searchActive],
+  );
+  const plottedMatches = useMemo(
+    () => rows.filter((r) => r.plottable).length,
+    [rows],
   );
   // chip 计数与探索页厂商下拉同口径：analysis.rows 全量，不被 focus / 搜索提前裁剪。
   const exploreChips = useMemo(
@@ -411,7 +431,7 @@ function App() {
   // 导出附带数据时间与评分口径，保证日后可复核同一结论。
   const scopeLabel = useMemo(() => {
     const parts = [
-      "四榜多数对决（共同至少两榜，PK 主积分同分按榜单位次均值排序）",
+      "四榜多数对决 Bradley-Terry（共同至少两榜，位次均值仅同分排序）",
       `至少 ${analysis.required} 榜`,
       estimated ? "允许 AA 估算" : "排除 AA 估算",
     ];
@@ -499,6 +519,23 @@ function App() {
     } else setError("复制失败：请直接复制浏览器地址栏的链接");
   };
   const current = analysis.rows.find((r) => r.id === selected);
+  // 成本来源只改变成本与前沿，不改变 BT 强度；缓存详情页的四个成本场景，
+  // 避免无关重渲染重复拟合。
+  const costScenarios = useMemo(() => {
+    if (!current) return {};
+    return Object.fromEntries(
+      ["composite", "aa", "vals", "livebench"].map((source) => [
+        source,
+        source === costSource
+          ? current
+          : analyze(evaluationModels, {
+              costSource: source,
+              includeEstimated: estimated,
+              costSources: activeCostSources,
+            }).rows.find((r) => r.id === current.id),
+      ]),
+    );
+  }, [current, costSource, evaluationModels, estimated, activeCostSources]);
   const stale = Object.values(data?.sources ?? {}).filter((s) => s.stale);
   const refresh = async () => {
     setBusy(true);
@@ -589,11 +626,17 @@ function App() {
         ),
     },
     {
-      title: "PK 主积分",
+      title: (
+        <Tooltip title="Bradley-Terry 强度，Elo 尺度：中位模型 1000，400 分差约等于 10∶1 预测胜率；不是实测胜率或能力百分比。">
+          <span className="cursor-help underline decoration-dotted">
+            PK 主积分
+          </span>
+        </Tooltip>
+      ),
       dataIndex: "composite",
       width: 110,
-      sorter: (a, b) =>
-        (a.composite ?? -1) - (b.composite ?? -1) ||
+      sorter: (a, b, sortOrder) =>
+        compareComposite(a, b, sortOrder) ||
         (a.auxiliary ?? -1) - (b.auxiliary ?? -1),
       render: (v, r) =>
         v == null ? (
@@ -602,7 +645,7 @@ function App() {
           </Tooltip>
         ) : (
           <Tooltip
-            title={`${r.record.wins} 胜 / ${r.record.draws} 平 / ${r.record.losses} 负，${r.record.opponents} 个对手；不是能力百分比`}
+            title={`Bradley-Terry 强度（Elo 尺度，中位 1000）。${r.record.wins} 胜 / ${r.record.draws} 平 / ${r.record.losses} 负，${r.record.opponents} 个对手；不是实测胜率或能力百分比`}
           >
             <strong className="number text-[12px] tabular-nums whitespace-nowrap">
               {v.toFixed(1)}
@@ -702,8 +745,9 @@ function App() {
       </div>
       <p className="control-help text-[11px] leading-[1.9] max-760:col-span-full">
         PK 多数对决：AA、Vals、LiveBench、Arena
-        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。PK
-        主积分相同才按各榜位次均值排序；两者来自同一批来源，不再合并。实际对手集合可能不同，原始分差不混入积分。
+        各一票；至少两榜准入，双方共同有效榜单不足两个不比赛。有效对局拟合
+        Bradley-Terry 强度并以 Elo
+        尺度显示；同分才按各榜位次均值排序。实际对手集合可能不同，原始分差不混入积分。
       </p>
       <div className="h-[1px] bg-[#e9eef2] mt-[17px] mb-[20px] max-760:my-[6px] max-760:col-span-full" />
       <label className="block text-[11px] text-[#65808e] font-medium mb-[8px] max-760:mt-[6px] max-760:mb-0 max-760:self-center max-760:text-[10px]">
@@ -954,7 +998,7 @@ function App() {
               aria-hidden="true"
             />
             <small className="block text-[11px] text-[#718592] max-760:text-[10px]">
-              有效综合评分
+              有效 PK 主积分
             </small>
             <strong className="block text-[31px] font-semibold tracking-[-0.045em] leading-[1.65] tabular-nums max-760:text-[28px] max-760:leading-[1.7]">
               {analysis.rows.filter((r) => r.composite != null).length}
@@ -1025,8 +1069,9 @@ function App() {
         />
         <div className="scoring-context">
           <span className="flex items-center gap-[8px] flex-wrap">
-            <SettingOutlined aria-hidden="true" /> PK 主积分 · 四榜各一票 · 至少{" "}
-            {analysis.required} 榜 · {estimated ? "允许估算" : "排除估算"}
+            <SettingOutlined aria-hidden="true" /> PK 主积分 · BT / Elo ·
+            四榜各一票 · 至少 {analysis.required} 榜 ·{" "}
+            {estimated ? "允许估算" : "排除估算"}
             {excludeHistorical ? " · 排除历史" : ""}
             {excludeStale ? " · 排除过期缓存" : ""}
           </span>
@@ -1034,6 +1079,14 @@ function App() {
             调整评分口径
           </Button>
         </div>
+        {!analysis.btConnected && (
+          <Alert
+            className="notice"
+            type="warning"
+            showIcon
+            title={`对局图分为 ${analysis.btComponents} 个互不相连的组，无法给出单一全局 BT 排名；主榜、对比与前沿暂不可用。请检查来源覆盖或质量排除设置，不回退到旧公式。`}
+          />
+        )}
         {excludeStale && activeCostSources.length < 3 && (
           <Alert
             className="notice"
@@ -1103,6 +1156,15 @@ function App() {
                     <div className="eyebrow">QUALITY & COST</div>
                     <h2>综合能力 / 成本前沿</h2>
                     <p>在同一视图比较模型能力、成本与证据覆盖</p>
+                    {searchActive && (
+                      <p className="search-hint">
+                        {rows.length
+                          ? plottedMatches
+                            ? `搜索命中 ${rows.length} 个模型，图中 ${plottedMatches} 个点位已用橙色描边标注；全部点位保留。`
+                            : `搜索命中 ${rows.length} 个模型，但它们都缺少图表所需的有效成本；全部点位仍保留。`
+                          : "搜索没有命中当前图表中的模型；全部点位仍保留。"}
+                      </p>
+                    )}
                   </div>
                   <Segmented
                     aria-label="模型范围"
@@ -1119,14 +1181,16 @@ function App() {
                     <Spin />
                     <p>正在读取模型数据…</p>
                   </div>
-                ) : rows.some((r) => r.plottable) ? (
+                ) : chartRows.some((r) => r.plottable) ? (
                   <Chart
-                    rows={rows}
+                    rows={chartRows}
                     focus={focus}
                     onSelect={setSelected}
                     chartRef={chartRef}
                     costSource={costSource}
                     costProfile={analysis.costProfile}
+                    highlightIds={highlightIds}
+                    searchActive={searchActive}
                   />
                 ) : (
                   <div className="h-[448px] flex flex-col items-center justify-center text-[#8c9ba5] text-[12px]">
@@ -1423,7 +1487,7 @@ function App() {
                 为什么在这个口径下是 / 不是前沿？
               </h3>
               <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
-                当前 PK 主积分{" "}
+                当前 PK 主积分（BT / Elo）{" "}
                 <b className="text-[#416775]">
                   {current.composite?.toFixed(2) ?? "未评分"}
                 </b>
@@ -1454,11 +1518,7 @@ function App() {
                 </thead>
                 <tbody>
                   {["composite", "aa", "vals", "livebench"].map((source) => {
-                    const a = analyze(evaluationModels, {
-                      costSource: source,
-                      includeEstimated: estimated,
-                      costSources: activeCostSources,
-                    }).rows.find((r) => r.id === current.id);
+                    const a = costScenarios[source];
                     return (
                       <tr key={source}>
                         <td className="text-left py-[11px] px-[8px] border-b border-[#edf1f4] text-[#63818f] max-760:py-[10px] max-760:px-[5px]">
@@ -1676,19 +1736,22 @@ function App() {
             如何计算 PK 主积分？
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            默认至少两榜准入。每对模型共同有效榜单不少于两榜才比赛，每榜一票；领先榜数多者胜，相同则平局，票数不足不计入分母。积分
-            = 100 ×（胜场 + 0.5 × 平场）÷ 实际有效对手数，无有效对手不赋分。
+            默认至少两榜准入。每对模型共同有效榜单不少于两榜才比赛，每榜一票；领先榜数多者胜，相同则平局，四榜
+            2∶2 时该场判平。把所有有效对局交给 Bradley-Terry
+            模型（平局半胜、Gamma(2,1) 弱先验）拟合相对强度，再以 Elo
+            尺度展示：中位模型 1000，400 分差约等于 10∶1
+            预测胜率。无有效对手不赋分；对局图不连通时不给出跨组件的单一全局名次。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            PK
-            多数关系可能循环，直接交手获胜不保证总积分更高。积分表示对当前样本的对决成绩，不是正确率或能力百分比。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。四榜
-            2∶2 时该场判平。最终 PK
-            主积分相同才按已有榜单排名百分位的等权平均排序；两者来自相同来源数据，位次均值只作同分排序，不作为第五票，也不与
-            PK
-            分再次合并。对手集合可能不同，积分可比性弱于完整四榜样本。对比页展示共同榜数、票数、原始分与分差。位次均值不参与帕累托纵轴或支配判断。
+            BT
+            按对手强度校正赛程，强队仍可能互相循环，因此等级分表示当前样本内的相对强度，不是实测胜率、正确率或能力百分比。现行
+            Copeland 胜率（100 ×（胜场 + 0.5 × 平场）÷
+            实际对手数）和名次只作为诊断保留在模型对比与
+            CSV，不进入主榜、前沿、同分排序或分享参数。BT
+            主积分相同才按已有榜单排名百分位的等权平均排序；位次均值只作同分排序，不作为第五票，也不与主分再次合并。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。对手集合可能不同，等级分的可比性弱于完整四榜样本；对比页展示共同榜数、票数、原始分与分差。位次均值不参与帕累托纵轴或支配判断。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            搜索、厂商、预算只改变显示；成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
+            搜索只过滤下方模型表并在散点图中标注命中点；厂商、预算只改变显示；成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             为何更关注开放权重？
@@ -1728,7 +1791,7 @@ function App() {
           </h3>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             融合排行榜可打开「LiveBench
-            能力维度」列，按编程、推理、研究等分类原始分排序，减少只看一个综合分的信息损失。仅
+            能力维度」列，按编程、推理、研究等分类原始分排序，减少只看一个融合分的信息损失。仅
             LiveBench 提供能力维度；AA 与 Vals
             没有对应数据，缺失保持空白，也不把分类分外推成综合能力。预算筛选按单一来源的真实美元任务成本隐藏超出上限的模型，未披露该来源成本的模型一并隐藏；它只改变显示范围，不改变分数、名次与前沿，综合相对成本仍只用于跨源观察，不充当美元预算。
           </p>
@@ -1743,8 +1806,9 @@ function App() {
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             名称只去除推理 effort 后缀，保留日期、Preview、Vision
             等发布区别。无法确认的名称不会模糊合并。模型族的不同推理配置单独保留；各站采用各自协议，部分
-            Anthropic 数据含
-            fallback。没有为综合分伪造置信区间，也不把微小分差解释为统计显著。
+            Anthropic 数据含 fallback。没有为 BT
+            等级分伪造置信区间，也不把微小分差解释为统计显著；低覆盖模型的 Elo
+            差异应结合对手数与共同榜覆盖阅读。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
             <a

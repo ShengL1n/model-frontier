@@ -25,6 +25,7 @@ import {
 import { NAMES, COSTS, costFormat, money } from "./presentation.mjs";
 import { csvExport } from "./analysis.mjs";
 import {
+  compareNullableScores,
   coverageSummary,
   evidenceDepth,
   filterModels,
@@ -71,16 +72,11 @@ const scoreCell = (v) =>
   Number.isFinite(v) ? (
     <span className="block max-w-[90px] font-[650] tabular-nums text-[#106e61]">
       {v.toFixed(1)}
-      <span className="mt-[7px] block h-[3px] rounded-[4px] bg-[#e8efed]">
-        <i
-          className="block h-full rounded-[4px] bg-[#56a190]"
-          style={{ width: `${Math.max(0, Math.min(100, v))}%` }}
-        />
-      </span>
     </span>
   ) : (
     <span className="text-[10px] leading-[1.85] text-[#6b818f]">未评分</span>
   );
+const compareComposite = compareNullableScores((r) => r.composite);
 const nameCell = (r, onSelect, id = r.id) => (
   <button className="model-link" onClick={() => onSelect(id)}>
     <span>
@@ -208,7 +204,7 @@ export function Overview({
       )}
       <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
         {label === "综合能力领先"
-          ? "按当前 PK 主积分排序，不要求成本已披露；默认至少两榜准入，票数不足的对决不计入战绩。"
+          ? "按 Bradley-Terry 强度（Elo 尺度）排序，不要求成本已披露；默认至少两榜准入，票数不足的对决不计入战绩。"
           : "在开放权重模型内排序；分数保持全球样本口径。"}{" "}
         并列分数无严格先后。
       </p>
@@ -614,11 +610,17 @@ export function Rankings({
           },
           { title: "开放状态", width: 130, render: (_, r) => stateTag(r) },
           {
-            title: "PK 主积分",
+            title: (
+              <Tooltip title="Bradley-Terry 强度，Elo 尺度：中位模型 1000，400 分差约等于 10∶1 预测胜率。它是相对强度，不是实测胜率或能力百分比。">
+                <span className="cursor-help underline decoration-dotted">
+                  PK 主积分
+                </span>
+              </Tooltip>
+            ),
             dataIndex: "composite",
             width: 115,
-            sorter: (a, b) =>
-              (a.composite ?? -Infinity) - (b.composite ?? -Infinity) ||
+            sorter: (a, b, sortOrder) =>
+              compareComposite(a, b, sortOrder) ||
               (a.auxiliary ?? -Infinity) - (b.auxiliary ?? -Infinity),
             render: (value, row) => (
               <div>
@@ -642,7 +644,7 @@ export function Rankings({
                             </div>
                           ))}
                           <div>
-                            这里只说明对局样本，不改变单场权重或 PK 主积分。
+                            这里只说明对局样本；BT 按对手强度给每场对局加权。
                           </div>
                         </div>
                       }
@@ -929,7 +931,15 @@ export function Rankings({
               className="ranking-alert"
               type="info"
               showIcon
-              title="至少两榜参赛；每对共同有效榜单不足两个不比赛。不同模型的实际对手集合可能不同，请结合战绩与对手数阅读。"
+              title="单一全局榜：至少两榜参赛，每对共同有效榜单不足两个不比赛。BT 按对手强度校正赛程；不同模型的对手集合仍可能不同，请结合战绩与对手数阅读。"
+            />
+          )}
+          {view === "fusion" && !analysis.btConnected && (
+            <Alert
+              className="ranking-alert"
+              type="warning"
+              showIcon
+              title={`对局图分为 ${analysis.btComponents} 个互不相连的组，无法给出单一全局 BT 排名。请检查来源覆盖或质量排除设置；这里不回退到旧公式。`}
             />
           )}
           {view === "fusion" && (
@@ -968,7 +978,9 @@ export function Rankings({
                 </div>
                 <p className="mb-[10px] text-[11px] leading-[1.85] text-[#627987]">
                   只纳入所选榜单都有有效分的模型，并只用这些榜单在这组模型中重算
-                  PK。榜单和对手范围都可能与主榜不同；本表用于观察比较范围变化时排名是否稳定，不能单独说明某个来源的影响，也不代表能力百分比。主榜不变；搜索和筛选只隐藏行，不参与重算。
+                  BT。榜单和对手范围都可能与主榜不同；各对照组的 Elo
+                  以该组中位模型为
+                  1000，积分只在该组内比较，不能与主榜数值直接相减。本表用于观察比较范围变化时排名是否稳定，不能单独说明某个来源的影响，也不代表能力百分比。主榜不变；搜索和筛选只隐藏行，不参与重算。
                 </p>
                 {!selectedCoverage ? (
                   <Empty
@@ -1038,7 +1050,7 @@ export function Rankings({
           />
           <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             {view === "fusion"
-              ? "PK 主积分 = 100 ×（胜场 + 0.5 × 平场）÷ 实际对手数。榜单位次均值由同一批来源的排名百分位等权平均，只在 PK 同分时用于排序，不再合并进主积分。对手集合可能不同，请结合战绩和对手数阅读；PK 关系可能循环。版本差异可在模型对比中查看共同榜单原始分差。"
+              ? "PK 主积分来自四榜多数对决的 Bradley-Terry 强度（平局半胜，Gamma(2,1) 弱先验），以 Elo 尺度展示：中位模型 1000，400 分差约等于 10∶1 预测胜率。它是相对强度，不是实测胜率或能力百分比；对局图不连通时不给出全局名次。榜单位次均值由同一批来源的排名百分位等权平均，只在 PK 同分时排序。现行 Copeland 胜率与名次作为诊断保留在模型对比和 CSV 中，不进入主榜、前沿或分享参数。"
               : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
           </p>
         </section>
@@ -1104,7 +1116,10 @@ export function Comparison({
   const facts = [
     metric("creator", "厂商", (r) => r.creator),
     metric("openness", "开放状态", stateTag),
-    metric("composite", "PK 主积分", (r) => number(r.composite)),
+    metric("composite", "PK 主积分（BT / Elo）", (r) => number(r.composite)),
+    metric("theta", "BT 强度 θ", (r) =>
+      r.theta == null ? "未排名" : r.theta.toFixed(4),
+    ),
     ...[
       metric("record", "PK 战绩（胜 / 平 / 负）", (r) =>
         r.record && r.composite != null
@@ -1269,7 +1284,8 @@ export function Comparison({
             <CompareChart rows={selected} />
             <p className="mt-[16px] mb-0 text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
               原始分量纲不同，因此图中只比较各榜相对位置；下表完整保留原始分。PK
-              主积分使用逐榜胜负；各榜位次均值只在 PK
+              主积分使用逐榜多数胜负拟合的 Bradley-Terry 强度；各榜位次均值只在
+              PK
               同分时辅助排序，两者不再次合并。不足当前覆盖门槛的模型不参加正式排名。
             </p>
           </section>
@@ -1327,6 +1343,75 @@ export function Comparison({
               />
             </section>
           }
+          <section className="method-comparison mb-[20px] rounded-[13px] border border-line bg-surface p-[20px] shadow-card">
+            <h2 className="text-[17px]">方法对照：BT 与现行 Copeland 胜率</h2>
+            <p className="text-[11px] leading-[1.9] text-[#627987]">
+              两列来自同一批对局。BT 按对手强度估计单一全局相对强度，主榜只使用
+              BT；Copeland
+              是原始胜率的诊断值。两者分歧不代表谁对：低覆盖或对手集合不同的模型，差异通常更大。名次差
+              = Copeland 名次 − BT 名次。
+            </p>
+            {!analysis.btConnected && (
+              <Alert
+                type="warning"
+                showIcon
+                title="对局图不连通，BT 全局名次不可用；下表只保留原始胜率诊断。"
+              />
+            )}
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              scroll={{ x: 820 }}
+              dataSource={selected}
+              columns={[
+                { title: "模型", width: 180, render: (_, r) => r.name },
+                {
+                  title: "BT 名次",
+                  dataIndex: "btRank",
+                  width: 90,
+                  render: (v) => v ?? "未排名",
+                },
+                {
+                  title: "PK 主积分（Elo）",
+                  width: 145,
+                  render: (_, r) =>
+                    r.composite == null ? "未排名" : number(r.composite),
+                },
+                {
+                  title: "现行 Copeland 名次",
+                  dataIndex: "copelandRank",
+                  width: 155,
+                  render: (v) => v ?? "未排名",
+                },
+                {
+                  title: "现行 Copeland 胜率",
+                  width: 155,
+                  render: (_, r) =>
+                    r.winRate == null ? "未排名" : number(r.winRate),
+                },
+                {
+                  title: "名次差",
+                  width: 90,
+                  render: (_, r) =>
+                    r.copelandRank != null && r.btRank != null
+                      ? r.copelandRank - r.btRank
+                      : "—",
+                },
+                {
+                  title: "对手数",
+                  width: 90,
+                  render: (_, r) => r.record?.opponents ?? "—",
+                },
+                {
+                  title: "有效榜覆盖",
+                  width: 110,
+                  render: (_, r) =>
+                    `${r.available.length}/${analysis.sources.length}`,
+                },
+              ]}
+            />
+          </section>
           <section className="compare-facts rounded-[13px] border border-line bg-surface shadow-card">
             <div className="portal-section-heading">
               <div>

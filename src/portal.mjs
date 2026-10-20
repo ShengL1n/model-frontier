@@ -1,27 +1,26 @@
+import { rankBy } from "./analysis.mjs";
 import { NAMES } from "./presentation.mjs";
 export const SOURCE_IDS = Object.keys(NAMES);
 
+// AntD 在 descend 时对比较结果取反；缺失值必须在两个方向都排在最后。
+export function compareNullableScores(valueOf) {
+  return (a, b, sortOrder) => {
+    const aValue = valueOf(a),
+      bValue = valueOf(b);
+    const aMissing = !Number.isFinite(aValue),
+      bMissing = !Number.isFinite(bValue);
+    if (aMissing || bMissing) {
+      if (aMissing && bMissing) return 0;
+      const missingLast = sortOrder === "descend" ? -1 : 1;
+      return aMissing ? missingLast : -missingLast;
+    }
+    return aValue - bValue;
+  };
+}
+
 // 并列同名次；没有综合分的模型保留在列表中，但不赋予名次。
 export function rankedModels(rows) {
-  const sorted = [...rows].sort(
-    (a, b) =>
-      (b.composite ?? -Infinity) - (a.composite ?? -Infinity) ||
-      (b.auxiliary ?? -Infinity) - (a.auxiliary ?? -Infinity) ||
-      a.name.localeCompare(b.name),
-  );
-  let last = null,
-    lastAuxiliary = null,
-    rank = null;
-  return sorted.map((r, i) => {
-    if (Number.isFinite(r.composite)) {
-      if (last !== r.composite || lastAuxiliary !== (r.auxiliary ?? null))
-        rank = i + 1;
-      last = r.composite;
-      lastAuxiliary = r.auxiliary ?? null;
-      return { ...r, rank };
-    }
-    return { ...r, rank: null };
-  });
+  return rankBy(rows, (r) => r.composite);
 }
 export function filterModels(
   rows,

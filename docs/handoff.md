@@ -1,8 +1,40 @@
 # Handoff
 
-最后更新：2026-10-20。**最新一轮：CI 与源站解耦（确定性夹具 + 独立巡检）、状态轮询收敛、失败来源单源退避重试，已完成开发、评审与全量验证；提交、推送与 CI 终态以版本库和 GitHub Actions 为准。** 以下“最新一轮”优先于后面的历史记录。
+最后更新：2026-10-20。**最新一轮：PK 主积分改用 Bradley-Terry 强度（Elo 尺度），Copeland 降为诊断；已完成单测、覆盖率、构建、三套 E2E 与浏览器实测；提交与 CI 终态以版本库和 GitHub Actions 为准。** 以下“最新一轮”优先于后面的历史记录。
 
-## 最新一轮：CI 解耦、轮询收敛与单源重试（2026-10-20，已交付）
+## 最新一轮：PK 主积分改用 Bradley-Terry（2026-10-20）
+
+### 决策与变更
+
+- 单一全局总榜保持不变；`analyze` 用现有 `majorityMatch` 对局拟合 BT MAP（Gamma(2,1) 先验，平局半胜，MM 1e-13 / 2000 轮），`composite` 改为 Elo 等级分 `1000 + 400/ln10 × (θ − 中位θ)`，新增 `theta` / `winRate` / `btRank` / `copelandRank`。
+- 对局图连通性门槛：多于一个非孤立组件时不赋全局 `composite` / 名次，页面明确提示；不回退旧公式。
+- `coverageCohorts` 改用 BT；主榜单一全局，`auxiliary` 仍只在同分时排序；Copeland 胜率 / 名次只进对比页与 CSV。
+- 对比页新增 `.method-comparison`（BT 名次 / 等级分、Copeland 名次 / 胜率、名次差、对手数、覆盖）；榜单 / 前沿 / 详情 / FAQ / README 文案更新；图表纵轴改为动态 Elo 区间，tooltip 去掉 `/100`。
+- CSV 新增 `BT强度θ`、`现行综合分（Copeland）`、`现行综合分名次`、`名次差`；`PK主积分` 改为 Elo。
+- ADR-0015 接受；`openspec` 变更归档到 `openspec/archive/2026-10-20-bradley-terry-ranking/`，规格并入 `openspec/specs/ranking/spec.md`。
+- 先验文档修正为 Gamma(2,1)：MM 更新式 `s_i=(W_i+1)/(Σ1/(s_i+s_j)+1)` 对应 shape 2、rate 1；Gamma(1,1) 会让全败模型强度为 0。
+- 审查修复：Elo 可为负，移除图表 0 硬下界与 PK 列 0–100 进度条；排序空值统一走 `compareNullableScores`，避免负分与未评分行错序；来源组合对照补充“各组 Elo 以组内中位为 1000、不可与主榜直接相减”。
+
+### 验证证据（2026-10-20 本机）
+
+- 单测 125/125；覆盖率行 98.71 / 分支 92.23 / 函数 96.44（门禁 92 / 85 / 90）；ESLint、Stylelint、Prettier、build 全绿。
+- 真实快照：771 模型族 / 87 个有对局 / 1 个连通组件 / 46 个可绘点；BT 拟合约 60–130ms/次（数组实现）。
+- 三套 E2E 全绿（真实数据）：`test:e2e` / `test:portal` / `test:evidence`；pageErrors / errors 为空。
+- 留一榜 AUC 回归基线：BT 0.732 vs Copeland 0.728（混合结果，不宣称更准）；时间回测仍是“更准”的验收门槛。
+- 浏览器实测：排行榜 `PK 主积分` 为 1609.0 等 Elo 值；对比页 `.method-comparison` 显示 BT / Copeland 名次与名次差；探索页纵轴 200–1750、tooltip 标注中位 1000。
+
+### 给下一棒的坑
+
+- **BT 先验不是 Gamma(1,1)**：`+1` 分子对应 Gamma(2,1)；若改成 Gamma(1,1)，全败模型 `s=0`、θ=-∞。ADR 已修正。
+- **不要按覆盖分榜或混合 BT / Copeland**：单一全局榜是硬需求；Copeland 只作诊断，不进入主分、先验、前沿、同分排序或分享参数。
+- **连通性门槛必须先于成本原因**：组件不连通时即使成本齐全也不可绘；`plottable=false`，reason 指向不连通。
+- **Elo 不是 0–100**：图表纵轴必须动态；`markArea` 底边用 `context.yMin`，不要退回 0。CSV / UI 的 `/100` 已移除。Elo 可以为负，不能把 0 当硬下界；模型表的 PK 列已去掉 0–100 进度条。
+- **缺失分排序用 `compareNullableScores`**：AntD 在 descend 时会取反比较结果，空值要在两个方向都排最后；不要再用 `composite ?? -1` 兜底（负 Elo 会与空值错序）。
+- **`rankBy` 是唯一并列口径**：主榜、Copeland 诊断、CSV 名次差共用；改 tie 规则要同时改测试。
+- **详情页四个成本场景已缓存**：`costScenarios` 复用主 `analysis`，不要改回渲染时四次 `analyze`。
+- **`btRank` 与 `rank` 不同**：`btRank` 是全样本 BT 名次（导出用），`rank` 是当前视图（如开放子集）重排名次；不要混用。
+
+## 上一轮：CI 解耦、轮询收敛与单源重试（2026-10-20，已交付）
 
 ### 决策与变更
 

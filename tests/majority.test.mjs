@@ -21,6 +21,8 @@ const record = (wins, draws, losses, opponents, shared = {}) => ({
   opponents,
   opponentsBySharedSources: { 2: 0, 3: 0, 4: 0, ...shared },
 });
+// 两模型一胜一负、Gamma(2,1) 先验下的已知 BT 解：强度比 2，Elo 围绕 1000 对称。
+const oneWinGap = (400 / Math.LN10) * (Math.log(2) / 2);
 
 test("two of three ballots win irrespective of score margins", () => {
   const a = model("a", [51, 51, 0]),
@@ -31,8 +33,16 @@ test("two of three ballots win irrespective of score margins", () => {
   assert.equal(match.ballots[2].difference, -100);
   const result = analyze([a, b]);
   assert.equal(result.required, 2);
-  assert.equal(result.rows[0].composite, 100);
-  assert.equal(result.rows[1].composite, 0);
+  assert.ok(Math.abs(result.rows[0].composite - (1000 + oneWinGap)) < 1e-6);
+  assert.ok(Math.abs(result.rows[1].composite - (1000 - oneWinGap)) < 1e-6);
+  assert.deepEqual(
+    result.rows.map((r) => r.winRate),
+    [100, 0],
+  );
+  assert.deepEqual(
+    result.rows.map((r) => r.copelandRank),
+    [1, 2],
+  );
   assert.deepEqual(result.rows[0].record, record(1, 0, 0, 1, { 3: 1 }));
 });
 
@@ -44,7 +54,9 @@ test("majority cycles produce tied scores with deterministic competition ranks",
   ];
   const result = run(models);
   for (const r of result.rows) {
-    assert.equal(r.composite, 50);
+    assert.equal(r.composite, 1000);
+    assert.equal(r.winRate, 50);
+    assert.equal(r.copelandRank, 1);
     assert.deepEqual(r.record, record(1, 0, 1, 2, { 3: 2 }));
   }
   assert.deepEqual(
@@ -53,7 +65,7 @@ test("majority cycles produce tied scores with deterministic competition ranks",
   );
   assert.deepEqual(
     run([...models].reverse()).rows.map((r) => r.composite),
-    [50, 50, 50],
+    [1000, 1000, 1000],
   );
 });
 
@@ -89,7 +101,8 @@ test("tied ballots and tied contests count half a match, never raw-score tiebrea
     b = model("b", [2, 9, 5]);
   assert.equal(majorityMatch(a, b).result, 0);
   for (const r of run([a, b]).rows) {
-    assert.equal(r.composite, 50);
+    assert.equal(r.composite, 1000);
+    assert.equal(r.winRate, 50);
     assert.deepEqual(r.record, record(0, 1, 0, 1, { 3: 1 }));
   }
   assert.equal(majorityMatch(a, model("c", [1, 10, 4])).result, 1);
@@ -193,9 +206,11 @@ test("two-source rule admits two-source models but never counts a one-source ove
     [2, 1, 1],
   );
   assert.deepEqual(
-    result.rows.map((r) => r.composite),
+    result.rows.map((r) => r.winRate),
     [100, 0, 0],
   );
+  assert.ok(result.rows[0].composite > result.rows[1].composite);
+  assert.equal(result.rows[1].composite, result.rows[2].composite);
   assert.equal(majorityMatch(rows[1], rows[2]).result, null);
   assert.equal(majorityMatch(rows[0], rows[1]).result, 1);
   assert.deepEqual(
@@ -224,14 +239,18 @@ test("coverage cohorts use a fixed source mask and ignore extra model scores", (
     ["a", "b", "c"],
   );
   assert.deepEqual(
-    aaVals.rows.map(({ record, composite }) => [record.opponents, composite]),
+    aaVals.rows.map(({ record, winRate }) => [record.opponents, winRate]),
     [
       [2, 100],
       [2, 0],
       [2, 50],
     ],
   );
-  assert.equal(result.rows.find(({ id }) => id === "a").composite, 50);
+  assert.ok(aaVals.rows[0].composite > aaVals.rows[2].composite);
+  assert.ok(aaVals.rows[2].composite > aaVals.rows[1].composite);
+  assert.ok(
+    Number.isFinite(result.rows.find(({ id }) => id === "a").composite),
+  );
 });
 
 test("coverage cohorts prefer more sources before larger sample size", () => {
@@ -290,6 +309,10 @@ test("auxiliary tiebreak sorts final standings without altering matches or Paret
   );
   assert.deepEqual(
     tied.rows.map((r) => r.composite),
+    [1000, 1000],
+  );
+  assert.deepEqual(
+    tied.rows.map((r) => r.winRate),
     [50, 50],
   );
 });
@@ -327,7 +350,8 @@ test("four ballots: a 2-2 split is a draw, a 3-1 split follows the majority", ()
   assert.deepEqual([match.leftWins, match.rightWins, match.tied], [2, 2, 0]);
   assert.equal(match.result, 0, "四榜 2∶2 为该场平局");
   for (const row of run([a, b]).rows) {
-    assert.equal(row.composite, 50);
+    assert.equal(row.composite, 1000);
+    assert.equal(row.winRate, 50);
     assert.deepEqual(row.record, {
       wins: 0,
       draws: 1,
@@ -341,10 +365,12 @@ test("four ballots: a 2-2 split is a draw, a 3-1 split follows the majority", ()
   const decided = majorityMatch(c, d);
   assert.deepEqual([decided.leftWins, decided.rightWins], [3, 1]);
   assert.equal(decided.result, 1);
+  const decidedResult = run([c, d]);
   assert.deepEqual(
-    run([c, d]).rows.map((r) => r.composite),
+    decidedResult.rows.map((r) => r.winRate),
     [100, 0],
   );
+  assert.ok(decidedResult.rows[0].composite > decidedResult.rows[1].composite);
 });
 
 test("a missing Arena ballot leaves the original three-ballot rule intact", () => {
@@ -395,7 +421,7 @@ test("a stale Arena source is excluded like any other stale source", () => {
 });
 
 test("the auxiliary average spans all four sources with Arena included", () => {
-  // 每对 3∶1 的循环：a 胜 b、b 胜 c、c 胜 a；主积分 25/75/50，辅助分为四榜百分位精确平均
+  // a-b 四榜 2∶2 平，b 3∶1 胜 c，c 3∶1 胜 a；辅助分为四榜百分位精确平均。
   const models = [
     model("a", [9, 1, 5, 1]),
     model("b", [5, 9, 1, 9]),
@@ -403,13 +429,19 @@ test("the auxiliary average spans all four sources with Arena included", () => {
   ];
   const result = run(models);
   assert.deepEqual(
-    result.rows.map((r) => [r.id, r.composite, r.auxiliary]),
+    result.rows.map((r) => [r.id, r.auxiliary]),
     [
-      ["a", 25, 37.5],
-      ["b", 75, 62.5],
-      ["c", 50, 50],
+      ["a", 37.5],
+      ["b", 62.5],
+      ["c", 50],
     ],
   );
+  assert.deepEqual(
+    result.rows.map((r) => r.winRate),
+    [25, 75, 50],
+  );
+  assert.ok(result.rows[1].composite > result.rows[2].composite);
+  assert.ok(result.rows[2].composite > result.rows[0].composite);
   // 撤掉 Arena 后三源辅助分同为 50，证明第四票真实进入辅助平均
   const withoutArena = run(
     models.map((m) => ({
@@ -423,4 +455,100 @@ test("the auxiliary average spans all four sources with Arena included", () => {
     withoutArena.rows.map((r) => r.auxiliary),
     [50, 50, 50],
   );
+});
+
+// ─── Bradley-Terry：赛程校正、有限性、顺序不变与连通性门槛 ───
+
+const sourceModel = (id, score, sources) => ({
+  id,
+  name: id,
+  openWeights: true,
+  representatives: Object.fromEntries(
+    sources.map((source) => [source, { score, costTask: 1 }]),
+  ),
+});
+
+test("BT corrects a soft schedule that inflates Copeland win rate", () => {
+  const all = ["aa", "vals", "livebench", "arena"];
+  const narrow = ["aa", "vals"];
+  const strong = ["livebench", "arena"];
+  const models = [
+    sourceModel("a", 100, strong),
+    sourceModel("b", 90, strong),
+    sourceModel("s", 80, all),
+    sourceModel("w", 70, narrow),
+    sourceModel("c", 60, narrow),
+    sourceModel("d", 50, narrow),
+    sourceModel("e", 40, narrow),
+  ];
+  const result = run(models);
+  const row = (id) => result.rows.find((r) => r.id === id);
+  // 软赛程：w 只打 weak 组，Copeland 胜率高于 s；但 s 直接击败 w，且只输给更强的 a/b。
+  assert.ok(row("w").winRate > row("s").winRate);
+  assert.ok(row("s").composite > row("w").composite);
+  assert.equal(row("a").copelandRank, 1);
+  assert.equal(row("e").record.wins, 0);
+  assert.ok(Number.isFinite(row("a").composite));
+  assert.ok(Number.isFinite(row("e").composite));
+});
+
+test("BT ratings are finite for undefeated and winless models and keep input order irrelevant", () => {
+  const models = [
+    sourceModel("top", 30, ["aa", "vals"]),
+    sourceModel("mid", 20, ["aa", "vals"]),
+    sourceModel("bottom", 10, ["aa", "vals"]),
+  ];
+  const forward = run(models),
+    backward = run([...models].reverse());
+  const ratings = (result) =>
+    Object.fromEntries(result.rows.map((r) => [r.id, r.composite]));
+  assert.deepEqual(ratings(forward), ratings(backward));
+  assert.ok(ratings(forward).top > ratings(forward).mid);
+  assert.ok(ratings(forward).mid > ratings(forward).bottom);
+  assert.ok(Object.values(ratings(forward)).every(Number.isFinite));
+});
+
+test("a disconnected match graph yields no global ranking instead of prior-connected components", () => {
+  const result = run([
+    sourceModel("a", 20, ["aa", "vals"]),
+    sourceModel("b", 10, ["aa", "vals"]),
+    sourceModel("c", 20, ["livebench", "arena"]),
+    sourceModel("d", 10, ["livebench", "arena"]),
+  ]);
+  assert.equal(result.btConnected, false);
+  assert.equal(result.btComponents, 2);
+  for (const row of result.rows) {
+    assert.equal(row.composite, null);
+    assert.equal(row.theta, null);
+    assert.equal(row.copelandRank, null);
+    assert.equal(row.plottable, false);
+    assert.match(row.reason, /互不相连/);
+  }
+  assert.deepEqual(
+    result.rows.map((r) => r.winRate),
+    [100, 0, 100, 0],
+  );
+  assert.deepEqual(
+    rankedModels(result.rows).map((r) => r.rank),
+    [null, null, null, null],
+  );
+});
+
+test("CSV exports BT strength and the Copeland diagnostic beside the Elo main score", () => {
+  const a = model("a", [3, 3, 3]),
+    b = model("b", [2, 2, 2]);
+  const rows = analyze([a, b]).rows;
+  const csv = csvExport(rows);
+  for (const header of [
+    "PK主积分",
+    "BT强度θ",
+    "现行综合分（Copeland）",
+    "现行综合分名次",
+    "名次差",
+  ])
+    assert.ok(csv.includes(header), `缺少列 ${header}`);
+  assert.match(csv, /Bradley-Terry/);
+  assert.match(csv, /1060\.2060/);
+  assert.match(csv, /100\.0000/);
+  assert.match(csv, /"0"/);
 });

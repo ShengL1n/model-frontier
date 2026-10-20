@@ -417,6 +417,10 @@ a {
   margin: 7px 0 0;
 }
 
+.chart-heading .search-hint {
+  color: #a06b2a;
+}
+
 .chart-heading .ant-segmented {
   font-size: 11px;
   white-space: nowrap;

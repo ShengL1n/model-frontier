@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { analyze } from "../src/analysis.mjs";
 import {
   VENDOR_CHIPS,
+  compareNullableScores,
   coverageSummary,
   evidenceDepth,
   filterModels,
@@ -38,7 +39,7 @@ test("fusion ranking includes scored models without costs and preserves ties and
     [1, 1, 3, null],
   );
   assert.equal(ranked[0].plottable, false);
-  assert.equal(ranked[0].composite, 75);
+  assert.equal(ranked[0].composite, 1000);
   assert.equal(ranked.length, 4);
 });
 test("display filters preserve original rank and scores", () => {
@@ -428,4 +429,30 @@ test("evidence depth counts only models that earned a PK score", () => {
   assert.equal(depth.matches, 1);
   assert.equal(depth.twoBoardPct, 100);
   assert.equal(depth.richBoardPct, 0);
+});
+
+test("negative Elo stays sortable and unscored rows stay last in both directions", () => {
+  const sources = ["aa", "vals", "livebench", "arena"];
+  const all = (score) =>
+    Object.fromEntries(
+      sources.map((source) => [source, { score, costTask: 1 }]),
+    );
+  const strong = [...Array(40)].map((_, i) => model("s" + i, all(100 - i)));
+  const rows = analyze([...strong, model("weak", all(0))]).rows;
+  const weak = rows.find((r) => r.id === "weak");
+  assert.ok(weak.composite < 0, "弱到一定程度时 Elo 可以为负");
+  const compare = compareNullableScores((r) => r.composite);
+  const data = [
+    { id: "neg", composite: weak.composite },
+    { id: "none", composite: null },
+    { id: "pos", composite: 1000 },
+  ];
+  assert.deepEqual(
+    [...data].sort((a, b) => compare(a, b, "ascend")).map((r) => r.id),
+    ["neg", "pos", "none"],
+  );
+  assert.deepEqual(
+    [...data].sort((a, b) => -compare(a, b, "descend")).map((r) => r.id),
+    ["pos", "neg", "none"],
+  );
 });

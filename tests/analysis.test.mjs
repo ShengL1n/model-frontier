@@ -364,9 +364,16 @@ test("extra source mentions cannot raise an objectively lowest scoring model", (
   ];
   const result = analyze(models, { costSource: "aa" });
   assert.deepEqual(
-    result.rows.map((r) => r.composite),
+    result.rows.map((r) => r.winRate),
     [0, 50, 100],
   );
+  assert.deepEqual(
+    result.rows.map((r) => r.copelandRank),
+    [3, 2, 1],
+  );
+  assert.ok(result.rows[0].composite < result.rows[1].composite);
+  assert.ok(result.rows[1].composite < result.rows[2].composite);
+  assert.equal(result.btConnected, true);
   assert.equal(Object.hasOwn(result.rows[0], "coverageBonus"), false);
 });
 
