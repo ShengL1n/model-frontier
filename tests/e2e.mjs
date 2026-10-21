@@ -181,7 +181,7 @@ try {
   await legend.click();
   const chartStage = page.locator(".chart-stage");
   const plottedBefore = await chartStage.getAttribute("data-chart-points");
-  await page.getByLabel("搜索模型", { exact: true }).fill("MiMo");
+  await page.getByLabel("帕累托搜索", { exact: true }).fill("MiMo");
   await page.locator(".search-hint").waitFor();
   assert.match(
     await page.locator(".search-hint").innerText(),
@@ -222,7 +222,7 @@ try {
     .waitFor();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
-  await page.getByLabel("搜索模型", { exact: true }).fill("");
+  await page.getByLabel("帕累托搜索", { exact: true }).fill("");
   await page.locator(".search-hint").waitFor({ state: "hidden" });
   assert.equal(
     await chartStage.getAttribute("data-chart-points"),

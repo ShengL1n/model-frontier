@@ -20,6 +20,7 @@ const DEFAULTS = {
   focus: "openFirst",
   onlyFront: false,
   query: "",
+  paretoQuery: "",
   view: "fusion",
   rankingQuery: "",
   creator: "",
@@ -57,7 +58,12 @@ const ENUM_KEYS = {
   view: ["v", VIEWS],
   openness: ["op", OPENNESS_VALUES],
 };
-const TEXT_KEYS = { query: "q", rankingQuery: "rq", creator: "cr" };
+const TEXT_KEYS = {
+  query: "q",
+  paretoQuery: "pq",
+  rankingQuery: "rq",
+  creator: "cr",
+};
 const numberIn = (value, min, max) => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null;

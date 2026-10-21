@@ -82,11 +82,55 @@ const stored = (key = "frontier:preferences") => {
     return {};
   }
 };
-const matchesSearch = (row, query) =>
-  !query ||
-  `${row.name} ${row.creator}`.toLowerCase().includes(query.toLowerCase());
+const matchesSearch = (row, query) => {
+  const needle = query.trim().toLowerCase();
+  return !needle || `${row.name} ${row.creator}`.toLowerCase().includes(needle);
+};
 const compareComposite = compareNullableScores((r) => r.composite);
 const compareAuxiliary = compareNullableScores((r) => r.auxiliary);
+function VendorSearchChips({ chips, query, onSearch }) {
+  const activeQuery = query.trim().toLowerCase();
+  return (
+    <div
+      className="pareto-vendor-search flex flex-wrap items-center gap-[7px]"
+      role="group"
+      aria-label="帕累托厂商快速搜索"
+    >
+      <span className="text-[10px] font-[650] tracking-[0.06em] text-[#7b958d]">
+        厂商快速搜索
+      </span>
+      {chips.map((chip) => {
+        const active = activeQuery === chip.value.toLowerCase();
+        const empty = chip.count === 0;
+        return (
+          <button
+            key={chip.value}
+            type="button"
+            aria-pressed={active}
+            disabled={empty && !active}
+            title={
+              `搜索 ${chip.value} 并在帕累托图中标记命中模型` +
+              (chip.note ? ` · ${chip.note}` : "") +
+              (active ? "；再次点击清除搜索" : "")
+            }
+            className={
+              "creator-chip inline-flex items-center gap-[5px] rounded-full border px-[10px] py-[2px] text-[11px] leading-[1.7] transition-colors " +
+              (active
+                ? "border-[#128574] bg-[#eaf5f1] font-medium text-[#0c6e5e]"
+                : "border-[#dce7e3] bg-white text-[#5f7c74] hover:border-[#a8cdc0] hover:text-[#2c6f60]") +
+              (empty && !active
+                ? " cursor-not-allowed opacity-40"
+                : " cursor-pointer")
+            }
+            onClick={() => onSearch(active ? "" : chip.value)}
+          >
+            {chip.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 function download(content, type, name) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement("a");
@@ -140,6 +184,7 @@ function App() {
     ),
     [focus, setFocus] = useState(shared.focus ?? prefs.focus ?? "openFirst"),
     [query, setQuery] = useState(shared.query ?? ""),
+    [paretoQuery, setParetoQuery] = useState(shared.paretoQuery ?? ""),
     [creator, setCreator] = useState(shared.creator || undefined),
     [estimated, setEstimated] = useState(
       shared.includeEstimated ?? prefs.includeEstimated === true,
@@ -210,6 +255,7 @@ function App() {
       setCostSource(state.costSource ?? "composite");
       setFocus(state.focus ?? "openFirst");
       setQuery(state.query ?? "");
+      setParetoQuery(state.paretoQuery ?? "");
       setCreator(state.creator || undefined);
       setOnlyFront(state.onlyFront === true);
       setBudgetSource(state.budgetSource ?? "none");
@@ -392,12 +438,7 @@ function App() {
   const chartRows = useMemo(
     () =>
       applyBudget(analysis.rows, { budgetSource, budgetLimit })
-        .filter(
-          (r) =>
-            (focus !== "openOnly" || r.openWeights === true) &&
-            (!creator || r.creator === creator) &&
-            (!onlyFront || r.frontier || r.openFrontier),
-        )
+        .filter((r) => focus !== "openOnly" || r.openWeights === true)
         .sort(
           (a, b) =>
             (focus === "openFirst"
@@ -407,22 +448,34 @@ function App() {
             (b.auxiliary ?? -1) - (a.auxiliary ?? -1) ||
             b.coverage - a.coverage,
         ),
-    [analysis, focus, creator, onlyFront, budgetSource, budgetLimit],
+    [analysis, focus, budgetSource, budgetLimit],
   );
-  // 搜索只过滤下方模型表；图表保留全部点位，命中模型单独标注。
+  // 表格过滤独立于帕累托图搜索；厂商、文本和前沿条件都只收窄表格行。
   const rows = useMemo(
     () =>
-      query ? chartRows.filter((r) => matchesSearch(r, query)) : chartRows,
-    [chartRows, query],
+      chartRows.filter(
+        (r) =>
+          matchesSearch(r, query) &&
+          (!creator || r.creator === creator) &&
+          (!onlyFront || r.frontier || r.openFrontier),
+      ),
+    [chartRows, query, creator, onlyFront],
   );
-  const searchActive = query.length > 0;
+  const searchActive = paretoQuery.trim().length > 0;
+  const searchMatches = useMemo(
+    () =>
+      searchActive
+        ? chartRows.filter((r) => matchesSearch(r, paretoQuery))
+        : [],
+    [chartRows, paretoQuery, searchActive],
+  );
   const highlightIds = useMemo(
-    () => (searchActive ? new Set(rows.map((r) => r.id)) : null),
-    [rows, searchActive],
+    () => (searchActive ? new Set(searchMatches.map((r) => r.id)) : null),
+    [searchMatches, searchActive],
   );
   const plottedMatches = useMemo(
-    () => rows.filter((r) => r.plottable).length,
-    [rows],
+    () => searchMatches.filter((r) => r.plottable).length,
+    [searchMatches],
   );
   // chip 计数与探索页厂商下拉同口径：analysis.rows 全量，不被 focus / 搜索提前裁剪。
   const exploreChips = useMemo(
@@ -475,7 +528,8 @@ function App() {
       costSource,
       focus,
       query,
-      // 探索页厂商与「仅看前沿」：chip / 复选框的激活态必须入链，否则同一链接复现不出同一列表。
+      paretoQuery,
+      // 探索页表格筛选：厂商与「仅看前沿」的激活态必须入链，才能复现同一列表。
       creator: creator ?? "",
       onlyFront,
       budgetSource,
@@ -508,6 +562,7 @@ function App() {
     costSource,
     focus,
     query,
+    paretoQuery,
     creator,
     onlyFront,
     budgetSource,
@@ -1156,6 +1211,16 @@ function App() {
         )}
         {tab === "explore" && (
           <>
+            <section className="panel mb-[18px] px-[20px] py-[14px] max-760:px-[13px] max-760:py-[13px]">
+              <VendorSearchChips
+                chips={exploreChips}
+                query={paretoQuery}
+                onSearch={setParetoQuery}
+              />
+              <p className="mt-[7px] mb-0 text-[9px] text-[#8c9ba5]">
+                点选厂商可在帕累托图中标记命中模型；完整点位和下方表格过滤保持独立。
+              </p>
+            </section>
             <section className="grid grid-cols-[254px_minmax(0,1fr)] gap-[19px] mb-[22px] items-start max-1180:grid-cols-[235px_minmax(0,1fr)] max-1180:gap-[16px] max-760:flex max-760:flex-col max-760:gap-[16px]">
               {controls}
               <div className="panel min-w-0 overflow-hidden pt-[23px] px-[23px] pb-[16px] max-1180:pt-[21px] max-1180:px-[18px] max-1180:pb-[15px] max-760:w-full max-760:pt-[20px] max-760:px-[13px] max-760:pb-[14px]">
@@ -1166,23 +1231,34 @@ function App() {
                     <p>在同一视图比较模型能力、成本与证据覆盖</p>
                     {searchActive && (
                       <p className="search-hint">
-                        {rows.length
+                        {searchMatches.length
                           ? plottedMatches
-                            ? `搜索命中 ${rows.length} 个模型，图中 ${plottedMatches} 个点位已用橙色描边标注；全部点位保留。`
-                            : `搜索命中 ${rows.length} 个模型，但它们都缺少图表所需的有效成本；全部点位仍保留。`
+                            ? `搜索命中 ${searchMatches.length} 个模型，图中 ${plottedMatches} 个点位已用橙色描边标注；全部点位保留。`
+                            : `搜索命中 ${searchMatches.length} 个模型，但它们都缺少图表所需的有效成本；全部点位仍保留。`
                           : "搜索没有命中当前图表中的模型；全部点位仍保留。"}
                       </p>
                     )}
                   </div>
-                  <Segmented
-                    aria-label="模型范围"
-                    value={focus === "openOnly" ? "openOnly" : "all"}
-                    onChange={setFocus}
-                    options={[
-                      { label: "全部模型", value: "all" },
-                      { label: "仅开放权重", value: "openOnly" },
-                    ]}
-                  />
+                  <div className="flex items-center gap-[10px] max-760:w-full max-760:flex-col max-760:items-start">
+                    <Input
+                      className="w-[220px] max-760:w-full"
+                      aria-label="帕累托搜索"
+                      prefix={<SearchOutlined aria-hidden="true" />}
+                      placeholder="搜索模型或厂商"
+                      value={paretoQuery}
+                      onChange={(e) => setParetoQuery(e.target.value)}
+                      allowClear
+                    />
+                    <Segmented
+                      aria-label="模型范围"
+                      value={focus === "openOnly" ? "openOnly" : "all"}
+                      onChange={setFocus}
+                      options={[
+                        { label: "全部模型", value: "all" },
+                        { label: "仅开放权重", value: "openOnly" },
+                      ]}
+                    />
+                  </div>
                 </div>
                 {!data ? (
                   <div className="h-[448px] flex flex-col items-center justify-center text-[#8c9ba5] text-[12px]">
@@ -1239,10 +1315,13 @@ function App() {
                     仅看前沿
                   </Checkbox>
                   <Select
+                    className="w-[190px]"
                     virtual={false}
                     allowClear
+                    showSearch
+                    optionFilterProp="label"
                     placeholder="全部厂商"
-                    aria-label="厂商筛选"
+                    aria-label="表格厂商筛选"
                     value={creator}
                     onChange={setCreator}
                     options={[...new Set(analysis.rows.map((m) => m.creator))]
@@ -1250,9 +1329,10 @@ function App() {
                       .map((value) => ({ value, label: value }))}
                   />
                   <Input
-                    aria-label="搜索模型"
+                    className="w-[220px]"
+                    aria-label="过滤模型表格"
                     prefix={<SearchOutlined aria-hidden="true" />}
-                    placeholder="搜索模型或厂商"
+                    placeholder="过滤模型或厂商"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     allowClear
@@ -1769,7 +1849,7 @@ function App() {
             主积分相同才按已有榜单排名百分位的等权平均排序；位次均值只作同分排序，不作为第五票，也不与主分再次合并。不足两榜的模型仍展示原始分，但不参加正式排名或前沿。对手集合可能不同，等级分的可比性弱于完整四榜样本；对比页展示共同榜数、票数、原始分与分差。位次均值不参与帕累托纵轴或支配判断。
           </p>
           <p className="text-[12px] leading-[1.95] text-[#78909d] [overflow-wrap:anywhere]">
-            搜索只过滤下方模型表并在散点图中标注命中点；厂商、预算只改变显示；成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
+            帕累托搜索只标注图中命中点并保留全部点位；厂商、文本和前沿条件只过滤下方模型表；预算只改变显示，成本切换不改变积分。估算及质量排除开关会改变参赛样本，因此会重算积分。
           </p>
           <h3 className="text-[15px] text-[#3d5a68] mt-[24px]">
             为何更关注开放权重？

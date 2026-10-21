@@ -255,6 +255,10 @@ try {
       assert.ok(selectedCoverageMask, "选择榜单组合后分享链接没有 cm 参数");
       await page.reload();
       await coverageSummary.click();
+      await page.waitForFunction((expectedLabel) => {
+        const select = document.querySelector("#coverage-mask-select");
+        return select?.parentElement?.innerText.trim() === expectedLabel;
+      }, selectedCoverageLabel);
       assert.equal(
         await page.evaluate(() =>
           new URLSearchParams(location.hash.split("?")[1] ?? "").get("cm"),
@@ -290,11 +294,15 @@ try {
   );
   await page.locator('.creator-chip[aria-pressed="true"]').click();
   await page.waitForFunction(() => !location.hash.includes("cr="));
-  // 探索页模型表 chip 同源：激活态同样入链、可复现，取消后恢复全量
+  // 探索页表格厂商过滤与帕累托搜索互相独立。
   await tab("前沿探索");
   await page
-    .locator(".models-panel .creator-chip", { hasText: "Kimi" })
+    .getByRole("combobox", { name: "表格厂商筛选", exact: true })
     .click();
+  await page
+    .getByRole("combobox", { name: "表格厂商筛选", exact: true })
+    .fill("Kimi");
+  await page.getByRole("option", { name: "Kimi", exact: true }).click();
   await page.waitForFunction(() => location.hash.includes("cr=Kimi"));
   assert.ok((await page.locator(".models-panel tr[data-row-key]").count()) > 0);
   await page.waitForFunction(() =>
@@ -302,6 +310,29 @@ try {
       (r) => r.textContent.includes("Kimi"),
     ),
   );
+  await page
+    .locator(".pareto-vendor-search .creator-chip", { hasText: "DeepSeek" })
+    .click();
+  await page.waitForFunction(() => {
+    const params = new URLSearchParams(location.hash.split("?")[1] ?? "");
+    return params.get("cr") === "Kimi" && params.get("pq") === "DeepSeek";
+  });
+  assert.equal(
+    await page.getByRole("textbox", { name: "帕累托搜索" }).inputValue(),
+    "DeepSeek",
+  );
+  assert.match(await page.locator(".search-hint").innerText(), /全部点位保留/);
+  assert.ok(
+    (await page.locator(".models-panel tr[data-row-key]").count()) > 0,
+    "帕累托搜索不应清除表格厂商过滤",
+  );
+  await page
+    .locator('.pareto-vendor-search .creator-chip[aria-pressed="true"]')
+    .click();
+  await page.waitForFunction(() => {
+    const params = new URLSearchParams(location.hash.split("?")[1] ?? "");
+    return params.get("pq") === null && params.get("cr") === "Kimi";
+  });
   await page
     .locator('.models-panel .creator-chip[aria-pressed="true"]')
     .click();

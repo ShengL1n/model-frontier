@@ -13,6 +13,7 @@ test("full share state survives an encode/decode round trip", () => {
     costSource: "vals",
     focus: "openOnly",
     query: "claude",
+    paretoQuery: "gemini",
     view: "livebench",
     rankingQuery: "opus",
     creator: "Anthropic",
