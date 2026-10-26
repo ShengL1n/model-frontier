@@ -350,6 +350,29 @@ test("default two-source cost allows a partial geometric mean but marks its cove
   assert.equal(r.rows[1].plottable, true);
   assert.equal(r.rows[1].complete, false);
 });
+
+test("an expensive new model cannot evict fully covered models from the frontier", () => {
+  const cheap = model("cheap", {
+    aa: { score: 50, costTask: 1 },
+    vals: { score: 50, costTask: 1 },
+    livebench: { score: 50, costTask: 1 },
+  });
+  const pricey = model("pricey", {
+    aa: { score: 90, costTask: 9 },
+    vals: { score: 90, costTask: 9 },
+    livebench: { score: 90, costTask: 9 },
+  });
+  const luxury = model("luxury", {
+    aa: { score: 99, costTask: 900 },
+    vals: { score: 99, costTask: 900 },
+    livebench: { score: 99, costTask: 900 },
+  });
+  const before = new Map(
+    analyzeSmall([cheap, pricey]).rows.map((r) => [r.id, r.frontier]),
+  );
+  for (const row of analyzeSmall([cheap, pricey, luxury]).rows)
+    if (before.has(row.id)) assert.equal(row.frontier, before.get(row.id));
+});
 test("extra source mentions cannot raise an objectively lowest scoring model", () => {
   const full = (score) => ({
     aa: { score, costTask: 1 },

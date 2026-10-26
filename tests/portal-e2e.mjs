@@ -246,6 +246,10 @@ try {
         ).get("cm");
         return current && current !== previous;
       }, initialCoverageMask);
+      // 地址栏同步有 250ms 去抖（见 main.jsx 的 shareTarget effect）：上面检测到的
+      // 变化可能仍是上一次待写入的旧值，此刻读 cm 会与选择器显示的口径不一致。
+      // 等一个完整去抖窗口再读，保证 cm 与标签同源。
+      await page.waitForTimeout(400);
       selectedCoverageMask = await page.evaluate(() =>
         new URLSearchParams(location.hash.split("?")[1] ?? "").get("cm"),
       );
@@ -445,8 +449,10 @@ try {
     2,
   );
   // 带过时参数的地址仍统一使用当前规则；正式积分与原始分差同时可查。
+  // 不写死模型 ID：对比对沿用上面从排行榜勾选的前两行，随当前数据自愈，
+  // 夹具与实时数据都能给出裁决（写死 ID 会在源站下架模型后超时）。
   await page.evaluate(() => {
-    location.hash = "#compare?score=majority&sel=glm53,deepseekv41flash";
+    location.hash = "#compare?score=majority";
   });
   await page.locator(".majority-comparison").waitFor();
   await page
@@ -472,7 +478,7 @@ try {
     .getByText(/∶\d+（\d+ 平票）· (左方获胜|右方获胜|对决平局)/)
     .waitFor();
   await page.evaluate(() => {
-    location.hash = "#compare?score=majority2&sel=glm53,deepseekv41flash";
+    location.hash = "#compare?score=majority2";
   });
   await page
     .getByRole("cell", {

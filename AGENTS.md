@@ -26,8 +26,12 @@ npm run format:check  # Prettier 检查
 
 1. `npm run test:coverage`（含门禁阈值）
 2. `npm run build`
-3. 重启 4317 服务（先 `lsof -ti :4317 -sTCP:LISTEN` 找到旧进程；注意 `kill` 需带 `-sTCP:LISTEN` 才能精确命中）
-4. 三套 E2E 全绿
+3. `npm run test:e2e:fixture`（在仓库内确定性夹具上跑三套 E2E，自起 4318 服务、不访问源站、不受实时数据漂移影响；与 CI 同一条数据路径）
+4. 需要看真实数据表现时，再重启 4317 服务手动核对（先 `lsof -ti :4317 -sTCP:LISTEN` 找到旧进程；注意 `kill` 需带 `-sTCP:LISTEN` 才能精确命中）
+
+## E2E 数据纪律
+
+三套 E2E 一律跑在 `tests/fixtures/snapshot.json` 上（CI 用 `prepare-fixture.mjs` + `FRONTIER_DATA_DIR`，本地用 `npm run test:e2e:fixture`）。**禁止把模型 ID、模型名、厂商名或任何随源站变化的数量写进断言**：源站会下架模型、改判估算、重打分，写死的值只会在下次抓取后超时。需要具体模型时，从页面当前状态取（如排行榜前两行的 `data-row-key`、搜索框过滤后的行数）；需要稳定结论时改断言结构（如「搜索命中 \d+ 个模型」容忍 0），不要钉数据。
 
 ## 已知坑
 
