@@ -105,7 +105,7 @@ export function configurationAssessment(model) {
     reason:
       entries.length < 2
         ? "不足两个来源的配置记录，无法比较。"
-        : "至少一个来源未完整披露推理档位，不能据此判断配置一致。",
+        : "至少一个来源的推理档位未能确认，不能据此判断配置一致。",
   };
 }
 export function evidenceFlags(model, sources = {}, now = Date.now()) {

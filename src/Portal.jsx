@@ -562,7 +562,13 @@ export function Rankings({
   ];
   const sourceColumns = SOURCE_IDS.map((s) => ({
     title: (
-      <Tooltip title="源站原始总分；不同榜单量纲不同，不直接相加">
+      <Tooltip
+        title={
+          s === "livebench"
+            ? "LiveBench 分类分数的等权均分；源站 Overall 可能采用不同权重。"
+            : "源站原始总分；不同榜单量纲不同，不直接相加"
+        }
+      >
         {NAMES[s]}
       </Tooltip>
     ),
@@ -728,7 +734,7 @@ export function Rankings({
           },
           { title: "开放状态", width: 130, render: (_, r) => stateTag(r) },
           {
-            title: "原始总分",
+            title: view === "livebench" ? "分类等权均分" : "原始总分",
             dataIndex: "score",
             width: 120,
             sorter: (a, b) => (a.score ?? -Infinity) - (b.score ?? -Infinity),
@@ -746,10 +752,22 @@ export function Rankings({
             render: money,
           },
           {
-            title: "输入 / 输出 USD 每百万 token",
+            title:
+              view === "vals"
+                ? "输入 / 输出参考单价 USD 每百万 token"
+                : "输入 / 输出 USD 每百万 token",
             width: 240,
             render: (_, r) =>
-              `${money(r.priceInput)} / ${money(r.priceOutput)}`,
+              view === "vals" && r.priceUrl ? (
+                <span>
+                  {money(r.priceInput)} / {money(r.priceOutput)}{" "}
+                  <a href={r.priceUrl} target="_blank" rel="noreferrer">
+                    来源
+                  </a>
+                </span>
+              ) : (
+                `${money(r.priceInput)} / ${money(r.priceOutput)}`
+              ),
           },
           {
             title: "源站",
@@ -1031,7 +1049,9 @@ export function Rankings({
               {NAMES[view]}{" "}
               {view === "arena"
                 ? "文本总榜原始偏好评分；票数、区间与发布日期直接来自源站，不是融合置信度。该来源不提供任务成本。"
-                : "的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。"}
+                : view === "livebench"
+                  ? "分类分数的等权均分与原生任务成本；源站 Overall 可能采用不同权重。"
+                  : "的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。"}
             </p>
           )}
           <Table
@@ -1067,7 +1087,9 @@ export function Rankings({
           <p className="mt-[8px] mb-0 px-[21px] pt-0 pb-[18px] text-[11px] leading-[1.9] text-[#627987] max-760:text-[10px]">
             {view === "fusion"
               ? `PK 主积分来自四榜多数对决的 Bradley-Terry 强度（平局半胜，Gamma(2,1) 弱先验），以 Elo 尺度展示：中位模型 1000，400 分差约等于 10∶1 预测胜率。它是相对强度，不是实测胜率或能力百分比；主榜只给至少 ${analysis.requiredOpponents} 个有效对手的模型名次，低样本模型保留原始战绩但不参与主榜与前沿；对局图不连通时不给出全局名次。榜单位次均值由同一批来源的排名百分位等权平均，只在 PK 同分时排序。现行 Copeland 胜率与名次作为诊断保留在模型对比和 CSV 中，不进入主榜、前沿或分享参数。`
-              : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
+              : view === "livebench"
+                ? "名次按当前纳入配置的分类等权均分计算，并列同名次；与源站 Overall 排名可能不同。"
+                : "源站名次由当前纳入配置按原始总分计算，并列同名次；不复刻源站的置信区间排名。"}
           </p>
         </section>
       </div>
@@ -1156,8 +1178,10 @@ export function Comparison({
     ),
     metric("cost", COSTS[costSource], (r) => costFormat(r.cost, costSource)),
     ...SOURCE_IDS.flatMap((s) => [
-      metric(s + "score", `${NAMES[s]} · 原始分`, (r) =>
-        number(r.representatives[s]?.score),
+      metric(
+        s + "score",
+        `${NAMES[s]} · ${s === "livebench" ? "分类等权均分" : "原始分"}`,
+        (r) => number(r.representatives[s]?.score),
       ),
       metric(s + "percentile", `${NAMES[s]} · 排名分`, (r) =>
         r.percentiles[s] == null ? "未参与评分" : number(r.percentiles[s]),

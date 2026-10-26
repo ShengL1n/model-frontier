@@ -22,7 +22,7 @@ export const SOURCE_INFO = {
   livebench: {
     name: "LiveBench",
     url: "https://livebench.ai/",
-    metric: "Overall · 七类任务",
+    metric: "分类等权均分",
   },
 };
 const number = (s) => {
@@ -197,20 +197,54 @@ export function parseVals(html) {
     .toArray()
     .find((t) => $(t).text().includes("Cost / Test"));
   if (!table) throw new Error("Vals 页面结构变化：找不到 Vals Index 表");
+  const headers = $(table)
+    .find("thead tr")
+    .first()
+    .children("th, td")
+    .toArray()
+    .map((cell) => $(cell).text().replace(/\s+/g, " ").trim());
+  const columns = {
+    name: headers.indexOf("Model"),
+    score: headers.indexOf("Accuracy"),
+    cost: headers.indexOf("Cost / Test"),
+    price: headers.indexOf("Input / Output Cost"),
+    duration: headers.findIndex(
+      (header) => header === "Duration" || header === "Duration / Test",
+    ),
+  };
+  if (
+    [columns.name, columns.score, columns.cost, columns.duration].includes(-1)
+  )
+    throw new Error("Vals 页面结构变化：缺少必要表头");
+  const elements = $(table).find("tbody tr").toArray();
   const rows = tableRows($, table)
-    .filter((r) => r.length >= 7 && number(r[2]) !== null)
-    .map((r) => {
-      const p = prices(r[4]);
+    .map((values, index) => ({ values, element: elements[index] }))
+    .filter(
+      ({ values }) =>
+        values.length === headers.length &&
+        values[columns.name] &&
+        number(values[columns.score]) !== null,
+    )
+    .map(({ values: r, element }) => {
+      const p = prices(r[columns.price]);
+      const href = $(element)
+        .find("td, th")
+        .eq(columns.name)
+        .find("a")
+        .first()
+        .attr("href");
+      const slug = /^\/models\/([\w.-]+)$/.exec(href ?? "")?.[1];
       return {
-        name: r[1],
-        score: number(r[2]),
-        costTask: number(r[3]),
+        name: r[columns.name],
+        score: number(r[columns.score]),
+        costTask: number(r[columns.cost]),
         priceInput: p[0] ?? null,
         priceOutput: p[1] ?? null,
-        duration: r[6],
+        duration: r[columns.duration],
         url: SOURCE_INFO.vals.url,
-        configuration: r[1],
+        configuration: r[columns.name],
         openWeights: null,
+        ...(slug ? { valsSlug: slug } : {}),
       };
     });
   return {
@@ -220,13 +254,127 @@ export function parseVals(html) {
     notes: ["Cost / Test 只代表 Vals 的任务与执行协议，不等于生产调用预算。"],
   };
 }
+// Astro 属性按 [类型, 值] 编码；只读取明确公开的数值，不执行源站脚本。
+const astroValue = (value) =>
+  Array.isArray(value) && value[0] === 0 ? value[1] : undefined;
+function valsComparisonPrices(html) {
+  const $ = cheerio.load(html);
+  const island = $("astro-island")
+    .toArray()
+    .find((item) =>
+      ($(item).attr("component-url") ?? "").includes("/ModelComparison."),
+    );
+  const props = JSON.parse($(island).attr("props") ?? "null");
+  const encoded = props?.initialModels;
+  if (!Array.isArray(encoded) || encoded[0] !== 1 || !Array.isArray(encoded[1]))
+    throw new Error("Vals 模型对比页结构变化");
+  const result = new Map();
+  for (const entry of encoded[1]) {
+    const model = astroValue(entry);
+    const slug = astroValue(model?.slug);
+    const key = astroValue(model?.full_key);
+    const visible = astroValue(astroValue(model?.metadata)?.show_cost);
+    if (
+      typeof slug !== "string" ||
+      typeof key !== "string" ||
+      typeof visible !== "boolean"
+    )
+      continue;
+    const encodedCosts = model.costs_per_million_token;
+    if (visible && (!Array.isArray(encodedCosts) || encodedCosts[0] !== 0))
+      continue;
+    const costs = visible ? encodedCosts[1] : null;
+    if (costs !== null && (typeof costs !== "object" || Array.isArray(costs)))
+      continue;
+    const input = costs === null ? null : astroValue(costs.input);
+    const output = costs === null ? null : astroValue(costs.output);
+    if (
+      [input, output].some(
+        (amount) => amount !== null && (!Number.isFinite(amount) || amount < 0),
+      )
+    )
+      continue;
+    const prices = { priceInput: input, priceOutput: output };
+    result.set(slug, result.has(slug) ? null : prices);
+  }
+  return result;
+}
+const VALS_COMPARISON = "https://www.vals.ai/comparison";
+function valsComparisonUrl(ids) {
+  const url = new URL(VALS_COMPARISON);
+  url.searchParams.set("m", ids.join(","));
+  return url.href;
+}
+async function valsComparison(ids) {
+  const url = valsComparisonUrl(ids);
+  return { url, prices: valsComparisonPrices(await getText(url, 8000)) };
+}
+async function valsModelKey(slug) {
+  const html = await getText(`https://www.vals.ai/models/${slug}`, 8000);
+  const $ = cheerio.load(html);
+  for (const link of $("a[href]").toArray()) {
+    const href = $(link).attr("href");
+    if (!href?.startsWith("/comparison?")) continue;
+    const url = new URL(href, VALS_COMPARISON);
+    const key = url.searchParams.get("modelA");
+    if (key) return key;
+  }
+  throw new Error("Vals 模型对比标识未找到");
+}
+async function fetchVals() {
+  const result = parseVals(await getText(SOURCE_INFO.vals.url));
+  const candidates = result.rows.filter(
+    (row) => row.priceInput == null && row.priceOutput == null,
+  );
+  let incomplete = candidates.some((row) => !row.valsSlug);
+  const linked = candidates.filter((row) => row.valsSlug);
+  // 对比页最多接受七个模型；按页面披露的 slug 校验身份，不依赖返回顺序。
+  for (let i = 0; i < linked.length; i += 7) {
+    const batch = linked.slice(i, i + 7);
+    let comparison;
+    try {
+      comparison = await valsComparison(batch.map((row) => row.valsSlug));
+    } catch {
+      incomplete = true;
+      continue;
+    }
+    await Promise.all(
+      batch.map(async (row) => {
+        let prices = comparison.prices.get(row.valsSlug);
+        let priceUrl = comparison.url;
+        if (!prices) {
+          try {
+            const key = await valsModelKey(row.valsSlug);
+            const fallback = await valsComparison([key]);
+            prices = fallback.prices.get(row.valsSlug);
+            priceUrl = fallback.url;
+          } catch {
+            incomplete = true;
+            return;
+          }
+        }
+        if (!prices) {
+          incomplete = true;
+          return;
+        }
+        Object.assign(row, prices, { priceUrl });
+      }),
+    );
+  }
+  for (const row of result.rows) delete row.valsSlug;
+  result.notes.push(
+    "输入 / 输出参考单价来自 Vals 官方报价；榜单未披露时从模型对比页补充，可能与任务实测成本采用的费率不同。",
+  );
+  if (incomplete) throw new Error("Vals 参考单价未能获取，保留上次成功缓存");
+  return result;
+}
 // LiveBench 元数据只取这四个键。正则预编译一次：既免去每条模型解析都重编一遍，也去掉
 // 动态构造的正则（键虽是本文件内的固定字面量，仍不该留给 detect-non-literal-regexp 告警）。
 const LB_SCALAR_RE = {
-  displayName: /(?:^|,)displayName:"([^"]*)"/,
-  organization: /(?:^|,)organization:"([^"]*)"/,
-  effort: /(?:^|,)effort:"([^"]*)"/,
-  url: /(?:^|,)url:"([^"]*)"/,
+  displayName: /(?:^|,)\s*displayName\s*:\s*"([^"]*)"/,
+  organization: /(?:^|,)\s*organization\s*:\s*"([^"]*)"/,
+  effort: /(?:^|,)\s*effort\s*:\s*"([^"]*)"/,
+  url: /(?:^|,)\s*url\s*:\s*"([^"]*)"/,
 };
 function scalar(body, key) {
   const re = LB_SCALAR_RE[key];
@@ -236,18 +384,74 @@ function scalar(body, key) {
 export function lbMetadata(js) {
   const metadata = {};
   for (const m of js.matchAll(
-    /(?:"([^"]+)"|([\w$-]+)):\{([^{}]{0,1800}organization:"[^"]+"[^{}]*)\}/g,
+    /(?:"([^"]+)"|([\w$-]+))\s*:\s*\{([^{}]{0,1800}organization\s*:\s*"[^"]+"[^{}]*)\}/g,
   )) {
     const [, quoted, key, body] = m;
     metadata[quoted ?? key] = {
       name: scalar(body, "displayName"),
       creator: scalar(body, "organization"),
       configuration: scalar(body, "effort"),
-      openWeights: /openweight:!0|openweight:true/.test(body) ? true : null,
+      openWeights: /openweight\s*:\s*(?:!0|true)/.test(body) ? true : null,
       url: scalar(body, "url"),
     };
   }
   return metadata;
+}
+async function lbReleaseMetadata(js, scriptUrl, v2) {
+  try {
+    const mapName = js.match(/\/\/[#@]\s*sourceMappingURL=([^\s]+)/)?.[1];
+    if (!mapName) throw new Error("source map 不存在");
+    const mapUrl = new URL(mapName, scriptUrl);
+    if (mapUrl.origin !== new URL(SOURCE_INFO.livebench.url).origin)
+      throw new Error("source map 来源异常");
+    const map = JSON.parse(await getText(mapUrl));
+    const sourcePath = v2
+      ? "Table/modelLinks.data.js"
+      : "v1/Table/modelLinks.js";
+    const index = Array.isArray(map.sources)
+      ? map.sources.indexOf(sourcePath)
+      : -1;
+    const source = index >= 0 ? map.sourcesContent?.[index] : null;
+    if (typeof source !== "string") throw new Error("缺少模型元数据");
+    if (!v2) {
+      const metadata = lbMetadata(source);
+      if (!Object.keys(metadata).length) throw new Error("旧版元数据格式变化");
+      return metadata;
+    }
+    // v2 的生成文件是 JSON 对象，直接解析，避免执行或猜测压缩脚本中的变量名。
+    const match = source.match(
+      /\bexport\s+const\s+modelLinks\s*=\s*(\{[\s\S]*\})\s*;\s*$/,
+    );
+    const models = JSON.parse(match?.[1] ?? "null");
+    if (
+      !models ||
+      typeof models !== "object" ||
+      Array.isArray(models) ||
+      !Object.values(models).some(
+        (model) =>
+          typeof model?.displayName === "string" ||
+          typeof model?.organization === "string",
+      )
+    )
+      throw new Error("新版元数据格式变化");
+    return Object.fromEntries(
+      Object.entries(models).map(([key, model]) => [
+        key,
+        {
+          name:
+            typeof model?.displayName === "string" ? model.displayName : null,
+          creator:
+            typeof model?.organization === "string" ? model.organization : null,
+          configuration:
+            typeof model?.effort === "string" ? model.effort : null,
+          openWeights: model?.openweight === true ? true : null,
+          url: typeof model?.url === "string" ? model.url : null,
+        },
+      ]),
+    );
+  } catch {
+    throw new Error("LiveBench 模型元数据无法按版本读取；保留上次数据");
+  }
 }
 export function parseLivebench(csv, costCsv, js) {
   const input = parse(csv, { columns: true, skip_empty_lines: true });
@@ -259,7 +463,7 @@ export function parseLivebench(csv, costCsv, js) {
       : []
     ).map((r) => [r.model, r]),
   );
-  const metadata = lbMetadata(js);
+  const metadata = typeof js === "string" ? lbMetadata(js) : js;
   const rows = input.map((r) => {
     const meta = metadata[r.model] ?? {};
     const suites = Object.fromEntries(
@@ -300,7 +504,7 @@ export function parseLivebench(csv, costCsv, js) {
       suites,
       creator: meta.creator,
       openWeights: meta.openWeights ?? null,
-      configuration: meta.configuration ?? "源站未披露",
+      configuration: meta.configuration ?? "未确认",
       url: SOURCE_INFO.livebench.url,
       rawId: r.model,
     };
@@ -308,7 +512,7 @@ export function parseLivebench(csv, costCsv, js) {
   return {
     rows,
     notes: [
-      "Overall 为可用 suite 等权均值；默认最高支持 effort，以源站元数据为准。",
+      "本项目对可用分类分数等权平均，与源站 Overall 的权重可能不同；配置来自对应版本的源站元数据。",
       "LiveBench 成本使用每次任务成本，不与每次成功任务成本混用。",
     ],
   };
@@ -352,7 +556,8 @@ export async function fetchLivebench() {
     .map((e) => $(e).attr("src"))
     .find((s) => /main\..*\.js/.test(s));
   if (!path) throw new Error("LiveBench 入口脚本位置变化");
-  const js = await getText(new URL(path, SOURCE_INFO.livebench.url));
+  const scriptUrl = new URL(path, SOURCE_INFO.livebench.url);
+  const js = await getText(scriptUrl);
   // 文件键与展示发布日期可能不同，保留源站明确给出的日期映射。
   const labels = Object.fromEntries(
     [...js.matchAll(/"(20\d{2}-\d{2}-\d{2})":"(20\d{2}-\d{2}-\d{2})"/g)].map(
@@ -383,8 +588,17 @@ export async function fetchLivebench() {
         if (isRetryableSourceError(error)) throw error;
         return null;
       });
+      const metadata = await lbReleaseMetadata(
+        js,
+        scriptUrl,
+        tablePath.startsWith("data/"),
+      );
       return {
-        ...parseLivebench(csv, cost?.startsWith("model,") ? cost : null, js),
+        ...parseLivebench(
+          csv,
+          cost?.startsWith("model,") ? cost : null,
+          metadata,
+        ),
         sourceDate: labels[id] ?? lbDashed(id),
         releaseKey: id,
       };
@@ -518,6 +732,6 @@ export async function fetchArena() {
 export const FETCHERS = {
   arena: fetchArena,
   aa: fetchAA,
-  vals: async () => parseVals(await getText(SOURCE_INFO.vals.url)),
+  vals: fetchVals,
   livebench: fetchLivebench,
 };

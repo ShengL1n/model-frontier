@@ -175,12 +175,23 @@ try {
       { exact: true },
     )
     .waitFor();
+  await page
+    .locator(".ranking-table")
+    .getByRole("columnheader", {
+      name: "输入 / 输出参考单价 USD 每百万 token",
+      exact: true,
+    })
+    .waitFor();
   await source("LiveBench");
   await page
     .getByText(
-      "LiveBench 的原始总分与原生任务成本。不同任务协议和推理配置不能视为统一实验。",
+      "LiveBench 分类分数的等权均分与原生任务成本；源站 Overall 可能采用不同权重。",
       { exact: true },
     )
+    .waitFor();
+  await page
+    .locator(".ranking-table")
+    .getByRole("columnheader", { name: "分类等权均分", exact: true })
     .waitFor();
   await source("Arena");
   await page

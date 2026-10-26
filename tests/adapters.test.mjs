@@ -150,12 +150,211 @@ test("AA manifest and payload failures fail clearly instead of returning invente
 });
 test("Vals model row uses th rather than td and keeps cost separate from token pricing", () => {
   const r = parseVals(
-    '<p>Updated 10/13/2026</p><table><thead><tr><th>Cost / Test</th></tr></thead><tbody><tr><td>1</td><th scope="row">New 99</th><td>61.15%</td><td>$3.24</td><td>$2 / $10</td><td>4B / 2M</td><td>12m</td></tr></tbody></table>',
+    '<p>Updated 10/13/2026</p><table><thead><tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Cost / Test</th><th>Input / Output Cost</th><th>Input / Output Tokens</th><th>Duration</th></tr></thead><tbody><tr><td>1</td><th scope="row">New 99</th><td>61.15%</td><td>$3.24</td><td>$2 / $10</td><td>4B / 2M</td><td>12m</td></tr></tbody></table>',
   );
   assert.equal(r.rows[0].name, "New 99");
   assert.equal(r.rows[0].score, 61.15);
   assert.equal(r.rows[0].costTask, 3.24);
   assert.equal(r.rows[0].priceOutput, 10);
+  assert.equal(r.rows[0].duration, "12m");
+});
+test("Vals parses the current six-column table without inventing token prices", () => {
+  const r = parseVals(
+    '<p>Updated 10/24/2026</p><table><thead><tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Cost / Test</th><th>Tokens / Test</th><th>Duration / Test</th></tr></thead><tbody><tr><td>1</td><th scope="row">Model A</th><td>70.85%</td><td>$18.70</td><td>78.59m</td><td>1h26m</td></tr><tr><td>2</td><th scope="row">Model B</th><td>0%</td><td>-</td><td>5.95m</td><td>7m27s</td></tr></tbody></table>',
+  );
+  assert.equal(r.sourceDate, "10/24/2026");
+  assert.deepEqual(
+    r.rows.map(
+      ({ name, score, costTask, priceInput, priceOutput, duration }) => ({
+        name,
+        score,
+        costTask,
+        priceInput,
+        priceOutput,
+        duration,
+      }),
+    ),
+    [
+      {
+        name: "Model A",
+        score: 70.85,
+        costTask: 18.7,
+        priceInput: null,
+        priceOutput: null,
+        duration: "1h26m",
+      },
+      {
+        name: "Model B",
+        score: 0,
+        costTask: null,
+        priceInput: null,
+        priceOutput: null,
+        duration: "7m27s",
+      },
+    ],
+  );
+});
+test("Vals uses column headers and rejects missing required headers", () => {
+  const html =
+    '<table><thead><tr><th>Cost / Test</th><th>Duration / Test</th><th>Accuracy</th><th>Model</th></tr></thead><tbody><tr><td>$3.24</td><td>12m</td><td>61.15%</td><th scope="row">New 99</th></tr></tbody></table>';
+  const row = parseVals(html).rows[0];
+  assert.equal(row.name, "New 99");
+  assert.equal(row.score, 61.15);
+  assert.equal(row.costTask, 3.24);
+  assert.equal(row.duration, "12m");
+  assert.throws(() => parseVals(html.replace("Accuracy", "Other")), /结构变化/);
+});
+const valsHtml = (slugs) =>
+  `<table><thead><tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Cost / Test</th><th>Tokens / Test</th><th>Duration / Test</th></tr></thead><tbody>${slugs.map((slug, i) => `<tr><td>${i + 1}</td><th><a href="/models/${slug}">Model ${i}</a></th><td>50%</td><td>$1</td><td>2m</td><td>3m</td></tr>`).join("")}</tbody></table>`;
+const valsComparison = (models) => {
+  const props = {
+    initialModels: [
+      1,
+      models.map(({ slug, key, input, output, visible = true }) => [
+        0,
+        {
+          slug: [0, slug],
+          full_key: [0, key],
+          metadata: [0, { show_cost: [0, visible] }],
+          costs_per_million_token: [
+            0,
+            { input: [0, input], output: [0, output] },
+          ],
+        },
+      ]),
+    ],
+  };
+  const escaped = JSON.stringify(props).replaceAll('"', "&quot;");
+  return `<astro-island component-url="/_astro/ModelComparison.test.js" props="${escaped}"></astro-island>`;
+};
+test("Vals reference prices use precise official values and match model identity", async () => {
+  const original = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    requests.push(url);
+    if (url.pathname === "/benchmarks/vals_index")
+      return new Response(valsHtml(["lab_a", "lab_b", "lab_c"]));
+    if (url.pathname === "/models/lab_c")
+      return new Response(
+        '<a href="/comparison?modelA=lab%2Finternal-c">Compare Models</a>',
+      );
+    if (url.pathname === "/comparison") {
+      const keys = url.searchParams.get("m");
+      if (keys === "lab/internal-c")
+        return new Response(
+          valsComparison([
+            {
+              slug: "lab_c",
+              key: "lab/internal-c",
+              input: 0.075,
+              output: 0.25,
+            },
+          ]),
+        );
+      return new Response(
+        valsComparison([
+          {
+            slug: "lab_b",
+            key: "lab/b",
+            input: 99,
+            output: 99,
+            visible: false,
+          },
+          { slug: "lab_a", key: "lab/a", input: 0.435, output: 0.87 },
+        ]),
+      );
+    }
+    throw new Error("测试未预期的请求：" + url);
+  };
+  try {
+    const result = await FETCHERS.vals();
+    assert.equal(result.rows[0].priceInput, 0.435);
+    assert.equal(result.rows[0].priceOutput, 0.87);
+    assert.match(
+      result.rows[0].priceUrl,
+      /^https:\/\/www\.vals\.ai\/comparison\?/,
+    );
+    assert.equal(result.rows[1].priceInput, null);
+    assert.equal(result.rows[1].priceOutput, null);
+    assert.equal(result.rows[2].priceInput, 0.075);
+    assert.equal(result.rows[2].priceOutput, 0.25);
+    assert.equal(result.rows[0].costTask, 1);
+    assert.ok(requests.some((url) => url.pathname === "/models/lab_c"));
+    assert.ok(result.notes.some((note) => note.includes("参考单价")));
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("Vals rejects refresh when the reference price lookup fails", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    return url.pathname === "/benchmarks/vals_index"
+      ? new Response(valsHtml(["lab_a"]))
+      : new Response("unavailable", { status: 503 });
+  };
+  try {
+    await assert.rejects(() => FETCHERS.vals(), /参考单价.*未能获取/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("Vals reports changed price metadata instead of treating it as undisclosed", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/benchmarks/vals_index")
+      return new Response(valsHtml(["lab_a"]));
+    if (url.pathname === "/comparison")
+      return new Response(
+        valsComparison([
+          { slug: "lab_a", key: "lab/a", input: 1, output: 2 },
+        ]).replaceAll("costs_per_million_token", "changed_cost_field"),
+      );
+    return new Response("<p>missing comparison link</p>");
+  };
+  try {
+    await assert.rejects(() => FETCHERS.vals(), /参考单价.*未能获取/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+test("Vals reference lookups respect the seven-model comparison limit", async () => {
+  const original = globalThis.fetch;
+  const slugs = Array.from({ length: 8 }, (_, i) => `lab_model-${i}`);
+  const batches = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(input);
+    if (url.pathname === "/benchmarks/vals_index")
+      return new Response(valsHtml(slugs));
+    if (url.pathname === "/comparison") {
+      const batch = url.searchParams.get("m").split(",");
+      batches.push(batch);
+      return new Response(
+        valsComparison(
+          batch.map((slug) => ({
+            slug,
+            key: slug.replace("_", "/"),
+            input: 0.435,
+            output: 0.87,
+          })),
+        ),
+      );
+    }
+    throw new Error("测试未预期的请求：" + url);
+  };
+  try {
+    const result = await FETCHERS.vals();
+    assert.deepEqual(
+      batches.map((batch) => batch.length),
+      [7, 1],
+    );
+    assert.equal(result.rows.length, 8);
+    assert.ok(result.rows.every((row) => row.priceInput === 0.435));
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 test("LiveBench correctly distinguishes cost per task from successful-task cost", () => {
   const js =
@@ -181,7 +380,24 @@ const LB_JS = [
   'const Me=e=>e.slice(0,4)+"-"+e.slice(4,6)+"-"+e.slice(6,8);',
   'const Oe=[...["2024-06-24","2026-06-25"].map((e=>({id:e,label:e,gen:"v1"}))),..._e.map((e=>({id:e,label:Me(e),gen:"v2"})))];',
   'const meta={"new-99":{url:"https://example.com",organization:"New",displayName:"New 99",effort:"max",openweight:!0}};',
+  'const legacy={"new-99":{url:"https://example.com",organization:"Old",displayName:"Old 99",effort:"low",openweight:!0}};',
+  "//# sourceMappingURL=main.test.js.map",
 ].join("\n");
+const LB_MAP = JSON.stringify({
+  sources: ["Table/modelLinks.data.js", "v1/Table/modelLinks.js"],
+  sourcesContent: [
+    `export const modelLinks = ${JSON.stringify({
+      "new-99": {
+        url: "https://example.com",
+        organization: "New",
+        displayName: "New 99",
+        effort: "max",
+        openweight: true,
+      },
+    })};`,
+    'export const modelLinks = {"new-99": {url: "https://example.com", organization: "Old", displayName: "Old 99", effort: "low", openweight: true}, "base": {organization: "Old", variants: [{rawName: "new-99-variant", displayName: "Variant 99"}]}};',
+  ],
+});
 const LB_TABLE = "model,coding,reasoning\nnew-99,50,100\n";
 const LB_COST =
   "model,coding,nq_coding,reasoning,nq_reasoning,input_price_per_million,output_price_per_million\nnew-99,20,10,10,20,1,2\n";
@@ -196,7 +412,9 @@ function serveLivebench(routes) {
       typeof input === "string" ? input : String(input?.url ?? input),
     );
     seen.push(url.pathname);
-    const hit = routes[url.pathname];
+    const hit =
+      routes[url.pathname] ??
+      (url.pathname === "/static/js/main.test.js.map" ? LB_MAP : undefined);
     return hit === undefined
       ? new Response("", { status: 404 })
       : new Response(hit, { status: 200 });
@@ -214,6 +432,7 @@ test("LiveBench ingestion picks the newest release across v1/v2 id forms and lay
     const r = await FETCHERS.livebench();
     assert.equal(r.rows.length, 1);
     assert.equal(r.rows[0].name, "New 99");
+    assert.equal(r.rows[0].configuration, "max");
     assert.equal(r.sourceDate, "2026-10-14");
     assert.equal(r.releaseKey, "20261014");
     assert.equal(seen[0], "/");
@@ -235,11 +454,57 @@ test("LiveBench ingestion falls back from v2 layout to v1 layout for older relea
     const r = await FETCHERS.livebench();
     assert.equal(r.sourceDate, "2026-06-25");
     assert.equal(r.releaseKey, "2026-06-25");
-    assert.equal(r.rows[0].name, "New 99");
+    assert.equal(r.rows[0].name, "Old 99");
+    assert.equal(r.rows[0].configuration, "low");
     assert.ok(
       seen.indexOf("/data/20261014/table.csv") <
         seen.indexOf("/v1/table_2026_06_25.csv"),
     );
+  } finally {
+    restore();
+  }
+});
+test("LiveBench v1 leaves unsupported nested variant metadata unknown", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/v1/table_2026_06_25.csv":
+      "model,coding,reasoning\nnew-99-variant,50,100\n",
+  });
+  try {
+    const row = (await FETCHERS.livebench()).rows[0];
+    assert.equal(row.name, "new-99-variant");
+    assert.equal(row.configuration, "未确认");
+    assert.equal(row.openWeights, null);
+  } finally {
+    restore();
+  }
+});
+test("LiveBench refuses ambiguous metadata if the matching source map is invalid", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/static/js/main.test.js.map": "not a source map",
+    "/data/20261014/table.csv": LB_TABLE,
+  });
+  try {
+    await assert.rejects(() => FETCHERS.livebench(), /LiveBench.*元数据/);
+  } finally {
+    restore();
+  }
+});
+test("LiveBench rejects a nonempty registry whose model metadata disappeared", async () => {
+  const { restore } = serveLivebench({
+    "/": LB_HOME,
+    "/static/js/main.test.js": LB_JS,
+    "/static/js/main.test.js.map": JSON.stringify({
+      sources: ["Table/modelLinks.data.js"],
+      sourcesContent: ['export const modelLinks = {"new-99": null};'],
+    }),
+    "/data/20261014/table.csv": LB_TABLE,
+  });
+  try {
+    await assert.rejects(() => FETCHERS.livebench(), /LiveBench.*元数据/);
   } finally {
     restore();
   }
@@ -343,7 +608,7 @@ test("LiveBench retains a source release label distinct from the file key", asyn
   const { restore } = serveLivebench({
     "/": LB_HOME,
     "/static/js/main.test.js":
-      LB_JS + 'const labels={"2026-06-25":"2026-06-26"};',
+      LB_JS + '\nconst labels={"2026-06-25":"2026-06-26"};',
     "/v1/table_2026_06_25.csv": LB_TABLE,
   });
   try {

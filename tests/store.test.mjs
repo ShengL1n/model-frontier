@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FETCHERS, parseVals } from "../server/adapters.mjs";
 const directory = await mkdtemp(join(tmpdir(), "frontier-store-"));
 process.env.FRONTIER_DATA_DIR = directory;
 const store = await import("../server/store.mjs");
@@ -157,5 +158,66 @@ test("a suspicious collapse in row count is rejected instead of silently replaci
   await store.refreshAll({ vals: async () => ({ rows: rows.slice(0, 40) }) });
   assert.equal(store.view().sources.vals.count, 40);
   assert.equal(store.view().sources.vals.error, null);
+});
+test("Vals refresh accepts the current table and clears a previous failure", async () => {
+  await store.refreshSources(["vals"], {
+    vals: async () => {
+      throw new Error("previous failure");
+    },
+  });
+  assert.equal(store.view().sources.vals.stale, true);
+  const rows = Array.from(
+    { length: 6 },
+    (_, i) =>
+      `<tr><td>${i + 1}</td><th scope="row">Model ${i}</th><td>${50 + i}%</td><td>$1.25</td><td>2m</td><td>3m</td></tr>`,
+  ).join("");
+  const html = `<table><thead><tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Cost / Test</th><th>Tokens / Test</th><th>Duration / Test</th></tr></thead><tbody>${rows}</tbody></table>`;
+  await store.refreshSources(["vals"], { vals: async () => parseVals(html) });
+  const source = store.view().sources.vals;
+  assert.equal(source.count, 6);
+  assert.equal(source.stale, false);
+  assert.equal(source.error, null);
+  const saved = JSON.parse(
+    await readFile(join(directory, "snapshot.json"), "utf8"),
+  );
+  assert.equal(saved.sources.vals.rows[0].priceInput, null);
+  assert.equal(saved.sources.vals.rows[0].duration, "3m");
+});
+test("failed Vals price lookup keeps the previous scores and prices", async () => {
+  const previous = Array.from({ length: 6 }, (_, i) => ({
+    name: `Model ${i}`,
+    score: 50 + i,
+    priceInput: 0.435,
+    priceOutput: 0.87,
+  }));
+  await store.refreshSources(["vals"], {
+    vals: async () => ({ rows: previous }),
+  });
+  const before = store.view().sources.vals.fetchedAt;
+  const rows = previous
+    .map(
+      (row, i) =>
+        `<tr><td>${i + 1}</td><th><a href="/models/lab_model-${i}">${row.name}</a></th><td>90%</td><td>$1</td><td>2m</td><td>3m</td></tr>`,
+    )
+    .join("");
+  const html = `<table><thead><tr><th>Rank</th><th>Model</th><th>Accuracy</th><th>Cost / Test</th><th>Tokens / Test</th><th>Duration / Test</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) =>
+    new URL(input).pathname === "/benchmarks/vals_index"
+      ? new Response(html)
+      : new Response("unavailable", { status: 503 });
+  try {
+    await store.refreshSources(["vals"], { vals: FETCHERS.vals });
+  } finally {
+    globalThis.fetch = original;
+  }
+  const source = store.view().sources.vals;
+  const saved = JSON.parse(
+    await readFile(join(directory, "snapshot.json"), "utf8"),
+  ).sources.vals;
+  assert.equal(source.stale, true);
+  assert.match(source.error, /参考单价.*未能获取/);
+  assert.equal(source.fetchedAt, before);
+  assert.deepEqual(saved.rows, previous);
 });
 after(() => rm(directory, { recursive: true, force: true }));

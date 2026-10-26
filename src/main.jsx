@@ -1775,9 +1775,17 @@ function App() {
                     </p>
                     {s === "arena" && <ArenaEvidence record={r} />}
                     <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
-                      任务成本 {money(r.costTask)} · 输入 / 输出单价{" "}
-                      {money(r.priceInput)} / {money(r.priceOutput)} 每百万
-                      token
+                      任务成本 {money(r.costTask)} · 输入 / 输出
+                      {s === "vals" ? "参考单价" : "单价"} {money(r.priceInput)}{" "}
+                      / {money(r.priceOutput)} 每百万 token
+                      {s === "vals" && r.priceUrl && (
+                        <>
+                          {" "}
+                          <a href={r.priceUrl} target="_blank" rel="noreferrer">
+                            价格来源
+                          </a>
+                        </>
+                      )}
                     </p>
                     <p className="text-[11px] leading-[1.9] text-[#81949d] [overflow-wrap:anywhere]">
                       {
